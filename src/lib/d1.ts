@@ -23,6 +23,29 @@ export async function d1Query<T = Record<string, unknown>>(
   sql: string,
   params: unknown[] = []
 ): Promise<T[]> {
+  // ✅ FIX: When called from the browser (all the "use client" admin pages
+  // that import services/*.ts directly), CF_ACCOUNT_ID / CF_D1_DATABASE_ID /
+  // CF_API_TOKEN are always undefined — they're server-only secrets. That
+  // made every admin page built on these services fail silently with
+  // "Missing Cloudflare D1 environment variables" (Overview, Users,
+  // Listings, Verifications, Escrows, Disputes, Reports, etc). Detect the
+  // browser and go through the authenticated admin/moderator-only proxy
+  // at /api/admin/d1 instead of hitting the Cloudflare API directly.
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, params }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? `D1 proxy error ${res.status}`);
+    }
+    const { results } = await res.json();
+    return (results ?? []) as T[];
+  }
+
   const accountId  = process.env.CF_ACCOUNT_ID;
   const databaseId = process.env.CF_D1_DATABASE_ID;
   const apiToken   = process.env.CF_API_TOKEN;
