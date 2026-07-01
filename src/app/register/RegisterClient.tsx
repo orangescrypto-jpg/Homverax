@@ -51,6 +51,12 @@ export default function RegisterClient() {
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [referralWelcomeBonus, setReferralWelcomeBonus] = useState(0);
+  // Temporary on-page debug panel — shows the raw error from a failed
+  // registration attempt directly on the page, since toast notifications
+  // can be missed/stale and browser console access isn't always available.
+  // Remove this once the root cause of registration failures is confirmed
+  // fixed in production.
+  const [debugError, setDebugError] = useState<string | null>(null);
 
   const {
     register, handleSubmit, formState: { errors, isSubmitting }, watch,
@@ -118,6 +124,7 @@ export default function RegisterClient() {
   }
 
   const onSubmit = async (data: FormData) => {
+    setDebugError(null);
     try {
       const name = `${data.firstName} ${data.lastName}`;
       const user = await registerWithEmail(data.email, data.password, name);
@@ -133,8 +140,16 @@ export default function RegisterClient() {
       }
       router.push("/select-role");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "";
+      const msg = err instanceof Error ? err.message : String(err);
       console.error("[RegisterClient] registration failed:", err);
+      // Build a detailed debug string: error message, error name, and stack
+      // (truncated) so the exact failure point is visible even without
+      // browser console access.
+      const detail = err instanceof Error
+        ? `${err.name}: ${err.message}${err.stack ? `\n${err.stack.split("\n").slice(0, 3).join("\n")}` : ""}`
+        : `Non-Error thrown: ${JSON.stringify(err)}`;
+      setDebugError(detail);
+
       if (msg.includes("email-already-in-use") || msg.toLowerCase().includes("already registered")) {
         toast.error("An account with this email already exists");
       } else if (msg) {
@@ -215,6 +230,17 @@ export default function RegisterClient() {
           <p className="text-sm text-muted-foreground mb-6">
             Join thousands of Nigerians transacting safely.
           </p>
+
+          {/* TEMPORARY DEBUG PANEL — remove once root cause of registration
+              failures is confirmed fixed in production. Shows the raw error
+              directly on the page since toast may be missed and browser
+              console isn't always accessible. */}
+          {debugError && (
+            <div className="mb-4 p-3 rounded-lg border border-red-300 bg-red-50 text-xs font-mono text-red-800 whitespace-pre-wrap break-words">
+              <p className="font-bold mb-1">DEBUG — raw error:</p>
+              {debugError}
+            </div>
+          )}
 
           {/* Referral banner */}
           {referralCode && referrerId && (
