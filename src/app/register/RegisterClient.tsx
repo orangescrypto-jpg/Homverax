@@ -134,8 +134,14 @@ export default function RegisterClient() {
       router.push("/select-role");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
-      if (msg.includes("email-already-in-use")) {
+      console.error("[RegisterClient] registration failed:", err);
+      if (msg.includes("email-already-in-use") || msg.toLowerCase().includes("already registered")) {
         toast.error("An account with this email already exists");
+      } else if (msg) {
+        // Surface the real error instead of a generic message so the actual
+        // cause (Supabase validation, D1 sync failure, network error, etc.)
+        // is visible instead of being swallowed.
+        toast.error(msg);
       } else {
         toast.error("Registration failed. Please try again.");
       }
