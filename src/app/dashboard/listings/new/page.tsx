@@ -32,6 +32,16 @@ import {
   REPAIR_CONSTRUCTION_TYPES, COMMERCIAL_EQUIPMENT_TYPES, FURNITURE_HOME_TYPES,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+
+// ✅ FIX: `register(field, numOpt)` turns an empty input
+// into `NaN`, not `undefined`. Zod's `.optional()` only excuses `undefined`,
+// so a blank optional number field (e.g. Size (sqm) on the Land form) makes
+// the ENTIRE multi-step form fail validation on final submit — silently,
+// since the offending field lives on a step that's no longer rendered by
+// the time you reach Publish. The Publish button looked completely
+// unresponsive because of this. Use `setValueAs` instead so blank inputs
+// become `undefined` (correctly optional) rather than `NaN` (always invalid).
+const numOpt = { setValueAs: (v: string) => (v === "" || v === undefined || v === null ? undefined : Number(v)) };
 import { toast } from "sonner";
 import LivePayoutBreakdown from "@/components/features/LivePayoutBreakdown";
 import type { BreakdownListingType } from "@/components/features/LivePayoutBreakdown";
@@ -587,12 +597,12 @@ export default function CreateListingPage() {
                   <div><Label>Description</Label><Textarea {...register("description")} className="mt-1 h-28 resize-none" placeholder="Describe the property — condition, unique features, what makes it great..." />{errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}</div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[{ label: "Bedrooms", field: "bedrooms" as const }, { label: "Bathrooms", field: "bathrooms" as const }, { label: "Toilets", field: "toilets" as const }, { label: "Parking", field: "parkingSpaces" as const }].map(({ label, field }) => (
-                      <div key={field}><Label>{label}</Label><Input type="number" min={0} className="mt-1" {...register(field, { valueAsNumber: true })} placeholder="0" /></div>
+                      <div key={field}><Label>{label}</Label><Input type="number" min={0} className="mt-1" {...register(field, numOpt)} placeholder="0" /></div>
                     ))}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><Label>Area (sqm)</Label><Input type="number" min={0} className="mt-1" {...register("areaSqM", { valueAsNumber: true })} placeholder="e.g. 120" /></div>
-                    <div><Label>Year Built</Label><Input type="number" className="mt-1" {...register("yearBuilt", { valueAsNumber: true })} placeholder="e.g. 2020" /></div>
+                    <div><Label>Area (sqm)</Label><Input type="number" min={0} className="mt-1" {...register("areaSqM", numOpt)} placeholder="e.g. 120" /></div>
+                    <div><Label>Year Built</Label><Input type="number" className="mt-1" {...register("yearBuilt", numOpt)} placeholder="e.g. 2020" /></div>
                   </div>
                   <div className="flex flex-wrap gap-4">
                     {[{ label: "Furnished", field: "furnished" as const }, { label: "Serviced", field: "serviced" as const }, { label: "Newly Built", field: "newlyBuilt" as const }].map(({ label, field }) => (
@@ -615,7 +625,7 @@ export default function CreateListingPage() {
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h2 className="font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /> Pricing</h2>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 1500000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 1500000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Price Unit</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v)}>
@@ -631,8 +641,8 @@ export default function CreateListingPage() {
                 </div>
                 {listingType === "rent" && (
                   <div className="grid grid-cols-2 gap-3">
-                    <div><Label>Agency Fee (₦)</Label><Input type="number" min={0} className="mt-1" {...register("agencyFee", { valueAsNumber: true })} placeholder="Optional" /></div>
-                    <div><Label>Caution Fee (₦)</Label><Input type="number" min={0} className="mt-1" {...register("cautionFee", { valueAsNumber: true })} placeholder="Optional" /></div>
+                    <div><Label>Agency Fee (₦)</Label><Input type="number" min={0} className="mt-1" {...register("agencyFee", numOpt)} placeholder="Optional" /></div>
+                    <div><Label>Caution Fee (₦)</Label><Input type="number" min={0} className="mt-1" {...register("cautionFee", numOpt)} placeholder="Optional" /></div>
                   </div>
                 )}
                 <LivePayoutBreakdown
@@ -718,10 +728,10 @@ export default function CreateListingPage() {
                 <div><Label>Listing Title</Label><Input {...register("title")} className="mt-1" placeholder="e.g. Open-Plan Office Space in Victoria Island" />{errors.title && <p className="text-xs text-red-500 mt-1">{errors.title.message}</p>}</div>
                 <div><Label>Description</Label><Textarea {...register("description")} className="mt-1 h-28 resize-none" placeholder="Describe the space — layout, fittings, suitable businesses, access..." />{errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}</div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Total Area (sqm)</Label><Input type="number" min={0} className="mt-1" {...register("areaSqM", { valueAsNumber: true })} placeholder="e.g. 200" /></div>
-                  <div><Label>Number of Floors</Label><Input type="number" min={1} className="mt-1" {...register("floors", { valueAsNumber: true })} placeholder="e.g. 2" /></div>
+                  <div><Label>Total Area (sqm)</Label><Input type="number" min={0} className="mt-1" {...register("areaSqM", numOpt)} placeholder="e.g. 200" /></div>
+                  <div><Label>Number of Floors</Label><Input type="number" min={1} className="mt-1" {...register("floors", numOpt)} placeholder="e.g. 2" /></div>
                 </div>
-                <div><Label>Parking Spaces</Label><Input type="number" min={0} className="mt-1 w-1/2" {...register("parkingSpaces", { valueAsNumber: true })} placeholder="e.g. 10" /></div>
+                <div><Label>Parking Spaces</Label><Input type="number" min={0} className="mt-1 w-1/2" {...register("parkingSpaces", numOpt)} placeholder="e.g. 10" /></div>
                 <div>
                   <Label>Power Supply</Label>
                   <Select onValueChange={(v) => setValue("powerSupply", v)}>
@@ -749,7 +759,7 @@ export default function CreateListingPage() {
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h2 className="font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-violet-500" /> Pricing</h2>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 5000000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 5000000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Price Unit</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v)}>
@@ -762,7 +772,7 @@ export default function CreateListingPage() {
                     </Select>
                   </div>
                 </div>
-                {listType === "rent" && <div><Label>Agency Fee (₦)</Label><Input type="number" min={0} className="mt-1" {...register("agencyFee", { valueAsNumber: true })} placeholder="Optional" /></div>}
+                {listType === "rent" && <div><Label>Agency Fee (₦)</Label><Input type="number" min={0} className="mt-1" {...register("agencyFee", numOpt)} placeholder="Optional" /></div>}
                 <LivePayoutBreakdown
                   price={commercialPrice}
                   listingType={(listType as BreakdownListingType) ?? "sale"}
@@ -831,8 +841,8 @@ export default function CreateListingPage() {
                 <div><Label>Listing Title</Label><Input {...register("title")} className="mt-1" placeholder="e.g. 500sqm Residential Plot in Ibeju-Lekki" />{errors.title && <p className="text-xs text-red-500 mt-1">{errors.title.message}</p>}</div>
                 <div><Label>Description</Label><Textarea {...register("description")} className="mt-1 h-28 resize-none" placeholder="Describe the land — topography, best use, access road, development potential..." />{errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}</div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Size (sqm)</Label><Input type="number" min={0} className="mt-1" {...register("sizeInSqM", { valueAsNumber: true })} placeholder="e.g. 500" /></div>
-                  <div><Label>Size (plots)</Label><Input type="number" min={0} className="mt-1" {...register("sizeInPlots", { valueAsNumber: true })} placeholder="e.g. 2" /></div>
+                  <div><Label>Size (sqm)</Label><Input type="number" min={0} className="mt-1" {...register("sizeInSqM", numOpt)} placeholder="e.g. 500" /></div>
+                  <div><Label>Size (plots)</Label><Input type="number" min={0} className="mt-1" {...register("sizeInPlots", numOpt)} placeholder="e.g. 2" /></div>
                 </div>
               </div>
             )}
@@ -861,7 +871,7 @@ export default function CreateListingPage() {
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h2 className="font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-green-600" /> Pricing</h2>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 8000000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 8000000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Price Unit</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v)}>
@@ -926,9 +936,9 @@ export default function CreateListingPage() {
                 <div><Label>Listing Title</Label><Input {...register("title")} className="mt-1" placeholder="e.g. Luxury 2-Bed Shortlet in Lekki Phase 1" />{errors.title && <p className="text-xs text-red-500 mt-1">{errors.title.message}</p>}</div>
                 <div><Label>Description</Label><Textarea {...register("description")} className="mt-1 h-28 resize-none" placeholder="Describe the space — décor style, what's included, nearby attractions, vibe..." />{errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}</div>
                 <div className="grid grid-cols-3 gap-3">
-                  <div><Label>Bedrooms</Label><Input type="number" min={0} className="mt-1" {...register("bedrooms", { valueAsNumber: true })} placeholder="0" /></div>
-                  <div><Label>Bathrooms</Label><Input type="number" min={0} className="mt-1" {...register("bathrooms", { valueAsNumber: true })} placeholder="0" /></div>
-                  <div><Label>Max Guests</Label><Input type="number" min={1} className="mt-1" {...register("maxGuests", { valueAsNumber: true })} placeholder="e.g. 4" /></div>
+                  <div><Label>Bedrooms</Label><Input type="number" min={0} className="mt-1" {...register("bedrooms", numOpt)} placeholder="0" /></div>
+                  <div><Label>Bathrooms</Label><Input type="number" min={0} className="mt-1" {...register("bathrooms", numOpt)} placeholder="0" /></div>
+                  <div><Label>Max Guests</Label><Input type="number" min={1} className="mt-1" {...register("maxGuests", numOpt)} placeholder="e.g. 4" /></div>
                 </div>
                 <div><Label>Amenities Included</Label><Textarea {...register("amenities")} className="mt-1 h-20 resize-none" placeholder="e.g. Netflix, WiFi, Smart TV, fully equipped kitchen, washing machine, gym access..." /></div>
                 <div className="flex flex-wrap gap-4">
@@ -948,7 +958,7 @@ export default function CreateListingPage() {
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h2 className="font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-amber-500" /> Rules & Pricing</h2>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 25000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 25000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Per</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v as any)} defaultValue="per_day">
@@ -961,7 +971,7 @@ export default function CreateListingPage() {
                   <div><Label>Check-in Time</Label><Input {...register("checkInTime")} className="mt-1" placeholder="e.g. 2:00 PM" /></div>
                   <div><Label>Check-out Time</Label><Input {...register("checkOutTime")} className="mt-1" placeholder="e.g. 11:00 AM" /></div>
                 </div>
-                <div><Label>Minimum Nights</Label><Input type="number" min={1} className="mt-1 w-1/2" {...register("minimumNights", { valueAsNumber: true })} placeholder="e.g. 2" /></div>
+                <div><Label>Minimum Nights</Label><Input type="number" min={1} className="mt-1 w-1/2" {...register("minimumNights", numOpt)} placeholder="e.g. 2" /></div>
                 <div><Label>House Rules</Label><Textarea {...register("houseRules")} className="mt-1 h-20 resize-none" placeholder="e.g. No parties, no smoking indoors, quiet hours after 10pm..." /></div>
                 <LivePayoutBreakdown
                   price={shortletPrice}
@@ -1021,7 +1031,7 @@ export default function CreateListingPage() {
                 <div><Label>Service Title</Label><Input {...register("title")} className="mt-1" placeholder="e.g. Professional Home Deep Cleaning in Lagos" />{errors.title && <p className="text-xs text-red-500 mt-1">{errors.title.message}</p>}</div>
                 <div><Label>Service Description</Label><Textarea {...register("description")} className="mt-1 h-32 resize-none" placeholder="Describe exactly what you do, equipment used, what clients can expect, and what sets you apart..." />{errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}</div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Years of Experience</Label><Input type="number" min={0} className="mt-1" {...register("experienceYears", { valueAsNumber: true })} placeholder="e.g. 5" /></div>
+                  <div><Label>Years of Experience</Label><Input type="number" min={0} className="mt-1" {...register("experienceYears", numOpt)} placeholder="e.g. 5" /></div>
                   <div>
                     <Label>Response Time</Label>
                     <Select onValueChange={(v) => setValue("responseTime", v)}>
@@ -1057,7 +1067,7 @@ export default function CreateListingPage() {
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Starting Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 15000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Starting Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 15000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Per</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v as any)} defaultValue="per_service">
@@ -1066,7 +1076,7 @@ export default function CreateListingPage() {
                     </Select>
                   </div>
                 </div>
-                <div><Label>Minimum Job Value (₦)</Label><Input type="number" min={0} className="mt-1" {...register("minimumJob", { valueAsNumber: true })} placeholder="Minimum you'll accept (optional)" /></div>
+                <div><Label>Minimum Job Value (₦)</Label><Input type="number" min={0} className="mt-1" {...register("minimumJob", numOpt)} placeholder="Minimum you'll accept (optional)" /></div>
                 <LivePayoutBreakdown price={servicePrice} listingType="service" />
               </div>
             )}
@@ -1122,7 +1132,7 @@ export default function CreateListingPage() {
                 <div><Label>Listing Title</Label><Input {...register("title")} className="mt-1" placeholder="e.g. Licensed Plumber — Leak Repairs & New Installations in Lagos" />{errors.title && <p className="text-xs text-red-500 mt-1">{errors.title.message}</p>}</div>
                 <div><Label>Description</Label><Textarea {...register("description")} className="mt-1 h-28 resize-none" placeholder="Describe your trade, tools/equipment used, types of jobs you handle, past projects..." />{errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}</div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Years of Experience</Label><Input type="number" min={0} className="mt-1" {...register("experienceYears", { valueAsNumber: true })} placeholder="e.g. 8" /></div>
+                  <div><Label>Years of Experience</Label><Input type="number" min={0} className="mt-1" {...register("experienceYears", numOpt)} placeholder="e.g. 8" /></div>
                   <div>
                     <Label>Response Time</Label>
                     <Select onValueChange={(v) => setValue("responseTime", v)}>
@@ -1138,7 +1148,7 @@ export default function CreateListingPage() {
                     <label key={field} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" {...register(field)} className="w-4 h-4 rounded" /><span className="text-sm">{label}</span></label>
                   ))}
                 </div>
-                {offersWarranty && <div><Label>Warranty Duration (months)</Label><Input type="number" min={1} className="mt-1 w-1/2" {...register("warrantyMonths", { valueAsNumber: true })} placeholder="e.g. 6" /></div>}
+                {offersWarranty && <div><Label>Warranty Duration (months)</Label><Input type="number" min={1} className="mt-1 w-1/2" {...register("warrantyMonths", numOpt)} placeholder="e.g. 6" /></div>}
               </div>
             )}
             {step === 2 && (
@@ -1164,7 +1174,7 @@ export default function CreateListingPage() {
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Starting Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 20000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Starting Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 20000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Per</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v as any)} defaultValue="per_service">
@@ -1241,7 +1251,7 @@ export default function CreateListingPage() {
                   <div><Label>Model</Label><Input {...register("model")} className="mt-1" placeholder="e.g. P20S" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Year of Make</Label><Input type="number" className="mt-1" {...register("yearOfMake", { valueAsNumber: true })} placeholder="e.g. 2021" /></div>
+                  <div><Label>Year of Make</Label><Input type="number" className="mt-1" {...register("yearOfMake", numOpt)} placeholder="e.g. 2021" /></div>
                   <div>
                     <Label>Condition</Label>
                     <Select onValueChange={(v) => setValue("condition", v)}>
@@ -1269,7 +1279,7 @@ export default function CreateListingPage() {
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h2 className="font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-red-500" /> Pricing</h2>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 500000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                  <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 500000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                   <div>
                     <Label>Price Unit</Label>
                     <Select onValueChange={(v) => setValue("priceUnit", v)}>
@@ -1365,7 +1375,7 @@ export default function CreateListingPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Dimensions</Label><Input {...register("dimensions")} className="mt-1" placeholder="e.g. 2.5m × 1.8m × 0.9m" /></div>
-                <div><Label>Quantity</Label><Input type="number" min={1} className="mt-1" {...register("quantity", { valueAsNumber: true })} placeholder="e.g. 1" /></div>
+                <div><Label>Quantity</Label><Input type="number" min={1} className="mt-1" {...register("quantity", numOpt)} placeholder="e.g. 1" /></div>
               </div>
               <div className="flex flex-wrap gap-4">
                 {[{ label: "Delivery Available", field: "deliveryAvailable" as const }, { label: "Assembly Included", field: "assemblyIncluded" as const }].map(({ label, field }) => (
@@ -1384,7 +1394,7 @@ export default function CreateListingPage() {
             <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
               <h2 className="font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-pink-500" /> Pricing</h2>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", { valueAsNumber: true })} placeholder="e.g. 120000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
+                <div><Label>Price (₦)</Label><Input type="number" min={0} className="mt-1" {...register("price", numOpt)} placeholder="e.g. 120000" />{errors.price && <p className="text-xs text-red-500 mt-1">{errors.price.message}</p>}</div>
                 <div>
                   <Label>Price Unit</Label>
                   <Select onValueChange={(v) => setValue("priceUnit", v)}>
