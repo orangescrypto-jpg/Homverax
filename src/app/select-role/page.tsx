@@ -21,7 +21,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 export default function SelectRolePage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { updateUser } = useAuthStore();
   const [selected, setSelected] = useState<UserRole | null>(
     user?.roleSelected ? user.role : null
@@ -98,10 +98,12 @@ export default function SelectRolePage() {
 
         <Button
           className="w-full h-12 font-semibold text-base"
-          disabled={!selected || isLoading}
+          disabled={!selected || isLoading || authLoading}
           onClick={handleContinue}
         >
-          {isLoading
+          {authLoading
+            ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading your session…</>
+            : isLoading
             ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Setting up…</>
             : "Continue to Dashboard"
           }
