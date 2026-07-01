@@ -328,18 +328,38 @@ export async function getUserById(userId: string): Promise<HomveraxUser | null> 
  */
 export function onAuthChange(callback: (user: HomveraxUser | null) => void): () => void {
   const supabase = createClient();
+
+  const resolveUser = async (sessionUserId: string, attempt = 1): Promise<void> => {
+    try {
+      const user = await fetchUserFromD1(sessionUserId);
+      callback(user);
+    } catch (err) {
+      // D1 can briefly lag right after registration/login (row not yet
+      // consistent). Retry a couple of times before giving up, instead of
+      // wiping out a genuinely authenticated user.
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        return resolveUser(sessionUserId, attempt + 1);
+      }
+      console.error("[onAuthChange] Failed to load user from D1 after retries:", err);
+      callback(null);
+    }
+  };
+
+  // Check the current session immediately on subscribe, rather than only
+  // reacting to future auth events — onAuthStateChange doesn't reliably
+  // fire with the existing session on every mount.
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session?.user) resolveUser(session.user.id);
+  });
+
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (_event, session) => {
+    (_event, session) => {
       if (!session?.user) {
         callback(null);
         return;
       }
-      try {
-        const user = await fetchUserFromD1(session.user.id);
-        callback(user);
-      } catch {
-        callback(null);
-      }
+      resolveUser(session.user.id);
     }
   );
   return () => subscription.unsubscribe();
