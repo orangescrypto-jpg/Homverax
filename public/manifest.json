@@ -1,0 +1,66 @@
+{
+  "name": "HomveraX — Nigeria's Property Marketplace",
+  "short_name": "HomveraX",
+  "description": "Find, buy, rent and transact property safely in Nigeria. Escrow-protected payments, verified agents.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4338ca",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-NG",
+  "categories": ["business", "lifestyle", "real-estate"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "HomveraX — Nigeria's Property Marketplace"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Browse Listings",
+      "short_name": "Browse",
+      "description": "Find properties for sale and rent in Nigeria",
+      "url": "/listings",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Dashboard",
+      "short_name": "Dashboard",
+      "description": "View your listings, escrow and wallet",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Find a Property",
+      "short_name": "Find",
+      "description": "Tell us what you're looking for",
+      "url": "/find-property",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Messages",
+      "short_name": "Messages",
+      "description": "Chat with agents and buyers",
+      "url": "/messages",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
