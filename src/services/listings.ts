@@ -124,73 +124,34 @@ export async function uploadListingImages(
 }
 
 // ─── Create listing ───────────────────────────────────────────────────────────
+// ✅ FIX: was calling d1Query()/d1Exec() directly from the client, which
+// (via the admin/moderator-only proxy in lib/d1.ts) blocked every regular
+// agent/landlord from publishing a listing at all, and routed the request
+// through a "/api/admin/" URL that some mobile networks filter, surfacing
+// as "Failed to fetch". Upload images first, then hit a dedicated,
+// any-signed-in-user route that does the DB write server-side.
 export async function createListing(
   data: Omit<PropertyListing, "id" | "createdAt" | "updatedAt" | "viewsCount" | "inquiriesCount" | "savedCount">,
   imageFiles: File[]
 ): Promise<PropertyListing> {
-  const id = newId();
-  const now = new Date().toISOString();
-
-  // Fetch agent rank boost from their subscription plan
-  const agentRows = await d1Query<{ subscription_plan: string }>(
-    "SELECT subscription_plan FROM users WHERE id = ?",
-    [data.agentId]
-  );
-  const plan = agentRows[0]?.subscription_plan ?? "free";
-  const RANK_BOOSTS: Record<string, number> = { free: 0, basic: 0, pro: 2, premium: 5 };
-  const agentRankBoost = RANK_BOOSTS[plan] ?? 0;
-
   let images = data.images ?? [];
   if (imageFiles.length > 0) {
-    images = await storageUploadListingImages(id, imageFiles);
+    images = await storageUploadListingImages(newId(), imageFiles);
   }
 
-  await d1Exec(
-    `INSERT INTO listings
-      (id, agent_id, title, description, category, property_type, listing_type,
-       price, price_unit, state, lga, address, latitude, longitude,
-       bedrooms, bathrooms, toilets, parking_spaces, area_sq_m, furnished,
-       images, video_url, virtual_tour_url, boost_type, is_property_verified,
-       is_featured, agent_rank_boost, status, views, saves, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      id,
-      data.agentId,
-      data.title,
-      data.description ?? null,
-      data.category ?? null,
-      data.propertyType ?? null,
-      data.listingType ?? null,
-      data.price ?? null,
-      data.priceUnit ?? null,
-      data.location?.state ?? null,
-      data.location?.lga ?? null,
-      data.location?.address ?? null,
-      data.location?.latitude ?? null,
-      data.location?.longitude ?? null,
-      data.bedrooms ?? null,
-      data.bathrooms ?? null,
-      data.toilets ?? null,
-      data.parkingSpaces ?? null,
-      data.areaSqM ?? null,
-      data.furnished ? 1 : 0,
-      JSON.stringify(images),
-      data.videoUrl ?? null,
-      data.virtualTourUrl ?? null,
-      data.boostType ?? "none",
-      data.isPropertyVerified ? 1 : 0,
-      data.isFeatured ? 1 : 0,
-      agentRankBoost,
-      "active",
-      0,
-      0,
-      now,
-      now,
-    ]
-  );
+  const res = await fetch("/api/listings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: { ...data, images } }),
+  });
 
-  const rows = await d1Query<ListingRow>(`SELECT ${LISTING_SELECT} WHERE l.id = ?`, [id]);
-  return rowToListing(rows[0]);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to create listing");
+  }
+
+  const { listing } = await res.json();
+  return listing as PropertyListing;
 }
 
 // ─── Get single listing ───────────────────────────────────────────────────────
