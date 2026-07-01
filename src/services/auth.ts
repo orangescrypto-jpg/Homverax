@@ -90,32 +90,68 @@ export async function registerWithEmail(
 
   // NOTE: The D1 profile row cannot be inserted directly from the browser —
   // d1Exec() needs CF_ACCOUNT_ID / CF_D1_DATABASE_ID / CF_API_TOKEN, which are
-  // server-only secrets and are always undefined in client-side code. Calling
-  // insertUserRow() here used to throw on every signup (since Supabase auth
-  // had already succeeded, this made every registration look like a failure
-  // even though the auth account was created). Instead, ask our own
-  // server-side API route to create the D1 row using the already-created
-  // auth user's id.
-  try {
-    const res = await fetch("/api/auth/sync-profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: data.user.id,
-        email,
-        name,
-        firstName,
-        lastName,
-      }),
-    });
-    if (!res.ok) {
+  // server-only secrets and are always undefined in client-side code. Instead,
+  // ask our own server-side API route to create the D1 row using the
+  // already-created auth user's id.
+  //
+  // This used to swallow every failure silently (console.error only), which
+  // meant a misconfigured CF_API_TOKEN in production could leave every new
+  // Supabase auth user without a matching D1 profile row, with no visible
+  // error and no way to detect it short of manually diffing the two tables.
+  // We now retry with backoff, and if it still fails we throw a clear error
+  // so the failure is visible instead of silent. The Supabase auth account
+  // still exists at this point (sign-in will work), but the app cannot
+  // function correctly without the D1 profile row, so we surface this rather
+  // than pretend registration succeeded.
+  const syncPayload = {
+    id: data.user.id,
+    email,
+    name,
+    firstName,
+    lastName,
+  };
+
+  const MAX_SYNC_ATTEMPTS = 3;
+  let lastSyncError: string | null = null;
+
+  for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch("/api/auth/sync-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(syncPayload),
+      });
+
+      if (res.ok) {
+        lastSyncError = null;
+        break;
+      }
+
       const body = await res.json().catch(() => ({}));
-      console.error("[registerWithEmail] D1 profile sync failed:", body?.error ?? res.statusText);
-      // Do not throw — the Supabase auth account is valid and usable even
-      // if the D1 profile row creation is delayed/retried later.
+      lastSyncError = body?.error ?? res.statusText ?? "Unknown error";
+      console.error(
+        `[registerWithEmail] D1 profile sync failed (attempt ${attempt}/${MAX_SYNC_ATTEMPTS}):`,
+        lastSyncError
+      );
+    } catch (syncErr) {
+      lastSyncError = syncErr instanceof Error ? syncErr.message : "Network error";
+      console.error(
+        `[registerWithEmail] D1 profile sync request failed (attempt ${attempt}/${MAX_SYNC_ATTEMPTS}):`,
+        lastSyncError
+      );
     }
-  } catch (syncErr) {
-    console.error("[registerWithEmail] D1 profile sync request failed:", syncErr);
+
+    if (attempt < MAX_SYNC_ATTEMPTS) {
+      // Simple backoff: 500ms, 1000ms
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+  }
+
+  if (lastSyncError) {
+    throw new Error(
+      `Your account was created, but we couldn't finish setting up your profile (${lastSyncError}). ` +
+      `Please try signing in — if this keeps happening, contact support.`
+    );
   }
 
   const profile: HomveraxUser = {
