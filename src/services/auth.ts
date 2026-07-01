@@ -67,34 +67,6 @@ async function fetchUserFromD1(userId: string): Promise<HomveraxUser | null> {
   return rowToUser(rows[0]);
 }
 
-// ─── Insert a new user row into D1 ──────────────────────────────────────────
-async function insertUserRow(params: {
-  id: string;
-  email: string;
-  name: string;
-  firstName: string;
-  lastName: string;
-  avatarUrl?: string;
-}): Promise<void> {
-  const now = new Date().toISOString();
-  await d1Exec(
-    `INSERT OR IGNORE INTO users
-      (id, email, name, first_name, last_name, avatar_url, role, role_selected,
-       is_verified, verification_status, subscription_plan, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'tenant', 0, 0, 'none', 'free', ?, ?)`,
-    [
-      params.id,
-      params.email,
-      params.name,
-      params.firstName,
-      params.lastName,
-      params.avatarUrl ?? null,
-      now,
-      now,
-    ]
-  );
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function registerWithEmail(
@@ -116,13 +88,35 @@ export async function registerWithEmail(
   if (error) throw new Error(error.message);
   if (!data.user) throw new Error("Registration failed — no user returned.");
 
-  await insertUserRow({
-    id: data.user.id,
-    email,
-    name,
-    firstName,
-    lastName,
-  });
+  // NOTE: The D1 profile row cannot be inserted directly from the browser —
+  // d1Exec() needs CF_ACCOUNT_ID / CF_D1_DATABASE_ID / CF_API_TOKEN, which are
+  // server-only secrets and are always undefined in client-side code. Calling
+  // insertUserRow() here used to throw on every signup (since Supabase auth
+  // had already succeeded, this made every registration look like a failure
+  // even though the auth account was created). Instead, ask our own
+  // server-side API route to create the D1 row using the already-created
+  // auth user's id.
+  try {
+    const res = await fetch("/api/auth/sync-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: data.user.id,
+        email,
+        name,
+        firstName,
+        lastName,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.error("[registerWithEmail] D1 profile sync failed:", body?.error ?? res.statusText);
+      // Do not throw — the Supabase auth account is valid and usable even
+      // if the D1 profile row creation is delayed/retried later.
+    }
+  } catch (syncErr) {
+    console.error("[registerWithEmail] D1 profile sync request failed:", syncErr);
+  }
 
   const profile: HomveraxUser = {
     id: data.user.id,
