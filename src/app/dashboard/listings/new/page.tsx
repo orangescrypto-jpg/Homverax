@@ -467,7 +467,14 @@ export default function CreateListingPage() {
 
   // ─── Submit helpers ───────────────────────────────────────────────────────
   const uploadAndCreate = async (payload: any, files: File[]) => {
-    if (!user) return;
+    // ✅ FIX: This used to silently `return` here with no feedback whenever
+    // `user` was momentarily null (auth still resolving, or a profile-lookup
+    // hiccup). That made "Publish Listing" look completely unresponsive with
+    // no error shown. Now it surfaces a toast and encourages a retry.
+    if (!user) {
+      toast.error("You're not signed in yet. Please wait a moment and try again, or refresh the page.");
+      return false;
+    }
     if (files.length === 0) { toast.error("Add at least one photo"); return false; }
     // ✅ Admin bypass: skip plan/slot limits — admin can list in any category freely
     const isAdmin = user.role === "admin";
