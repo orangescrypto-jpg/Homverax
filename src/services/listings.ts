@@ -10,7 +10,9 @@ import { uploadListingImages as storageUploadListingImages } from "@/services/st
 import type { PropertyListing, ListingFilters, PaginatedResponse } from "@/types";
 
 // ─── Row from D1 listings table ───────────────────────────────────────────────
-interface ListingRow {
+// Exported so server-only API routes (e.g. /api/admin/listings) can reuse the
+// same row shape and mapping logic instead of duplicating it.
+export interface ListingRow {
   id: string;
   agent_id: string;
   title: string;
@@ -53,7 +55,7 @@ interface ListingRow {
   agent_phone?: string;
 }
 
-function rowToListing(row: ListingRow): PropertyListing {
+export function rowToListing(row: ListingRow): PropertyListing {
   let images: string[] = [];
   try { images = JSON.parse(row.images || "[]"); } catch { images = []; }
 
@@ -103,7 +105,7 @@ function rowToListing(row: ListingRow): PropertyListing {
   };
 }
 
-const LISTING_SELECT = `
+export const LISTING_SELECT = `
   l.*,
   u.name AS agent_name,
   u.avatar_url AS agent_avatar,
@@ -361,22 +363,32 @@ export async function applyBoost(
 }
 
 // ─── Admin: get all listings ──────────────────────────────────────────────────
+// ✅ FIX: This used to call d1Query() directly, but d1Query() needs
+// CF_ACCOUNT_ID / CF_D1_DATABASE_ID / CF_API_TOKEN — server-only secrets
+// that are always undefined in the browser. Since this function is called
+// from the client-side admin "Manage Listings" page, it always threw
+// "Missing Cloudflare D1 environment variables" and surfaced as
+// "Failed to load listings". Route through the server API instead, same
+// pattern as the rest of the app (see /api/auth/me).
 export async function getAllListingsAdmin(pageLimit = 200): Promise<PropertyListing[]> {
-  const rows = await d1Query<ListingRow>(
-    `SELECT ${LISTING_SELECT} ORDER BY l.created_at DESC LIMIT ?`,
-    [pageLimit]
-  );
-  return rows.map(rowToListing);
+  const res = await fetch(`/api/admin/listings?limit=${pageLimit}`, { cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to load listings");
+  }
+  const { listings } = await res.json();
+  return listings as PropertyListing[];
 }
 
 // ─── Admin: get reported listings ────────────────────────────────────────────
+// ✅ FIX: was calling d1Query() directly from client code — same issue as
+// getAllListingsAdmin() above. Routed through a server API instead.
 export async function getReportedListings(): Promise<PropertyListing[]> {
   try {
-    const rows = await d1Query<ListingRow>(
-      `SELECT ${LISTING_SELECT} WHERE l.status = 'reported' ORDER BY l.updated_at DESC`,
-      []
-    );
-    return rows.map(rowToListing);
+    const res = await fetch("/api/admin/reported-listings", { cache: "no-store" });
+    if (!res.ok) return [];
+    const { listings } = await res.json();
+    return listings as PropertyListing[];
   } catch {
     return [];
   }
