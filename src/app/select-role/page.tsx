@@ -29,15 +29,21 @@ export default function SelectRolePage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
-    if (!selected || !user) return;
+    if (!selected) return;
+    if (!user) {
+      toast.error("Your session isn't ready yet — please wait a moment and try again.");
+      return;
+    }
     setIsLoading(true);
     try {
       await updateUserRole(user.id, selected);
       updateUser({ role: selected, roleSelected: true });
       toast.success("Great! Your account is all set.");
       router.push("/dashboard");
-    } catch {
-      toast.error("Failed to save your role. Please try again.");
+    } catch (err) {
+      console.error("[select-role] Failed to save role:", err);
+      const msg = err instanceof Error ? err.message : "Failed to save your role. Please try again.";
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
