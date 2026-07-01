@@ -190,9 +190,10 @@ export async function loginWithEmail(
 
   if (!data.user) throw new Error("Login failed — no user returned.");
 
-  const user = await fetchUserFromD1(data.user.id);
-  if (!user) throw new Error("User profile not found. Please contact support.");
-  return user;
+  const res = await fetch("/api/auth/me", { cache: "no-store" });
+  if (!res.ok) throw new Error("User profile not found. Please contact support.");
+  const { user: row } = await res.json();
+  return rowToUser(row);
 }
 
 export async function loginWithGoogle(): Promise<HomveraxUser> {
@@ -329,19 +330,36 @@ export async function getUserById(userId: string): Promise<HomveraxUser | null> 
 export function onAuthChange(callback: (user: HomveraxUser | null) => void): () => void {
   const supabase = createClient();
 
-  const resolveUser = async (sessionUserId: string, attempt = 1): Promise<void> => {
+  // NOTE: fetchUserFromD1() calls d1Query() directly, which needs
+  // CF_ACCOUNT_ID / CF_D1_DATABASE_ID / CF_API_TOKEN — server-only secrets
+  // that are always undefined in the browser. Calling it from here would
+  // fail on every single request, not intermittently. Go through our own
+  // /api/auth/me route instead, same pattern as the rest of the app.
+  const resolveUser = async (attempt = 1): Promise<void> => {
     try {
-      const user = await fetchUserFromD1(sessionUserId);
-      callback(user);
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      if (res.status === 401) {
+        callback(null);
+        return;
+      }
+      if (!res.ok) {
+        // 404 (profile row not yet written) or 5xx — retry briefly before
+        // giving up, since this can happen right after registration.
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 400 * attempt));
+          return resolveUser(attempt + 1);
+        }
+        callback(null);
+        return;
+      }
+      const { user: row } = await res.json();
+      callback(rowToUser(row));
     } catch (err) {
-      // D1 can briefly lag right after registration/login (row not yet
-      // consistent). Retry a couple of times before giving up, instead of
-      // wiping out a genuinely authenticated user.
       if (attempt < 3) {
         await new Promise((r) => setTimeout(r, 400 * attempt));
-        return resolveUser(sessionUserId, attempt + 1);
+        return resolveUser(attempt + 1);
       }
-      console.error("[onAuthChange] Failed to load user from D1 after retries:", err);
+      console.error("[onAuthChange] Failed to load user profile after retries:", err);
       callback(null);
     }
   };
@@ -350,7 +368,7 @@ export function onAuthChange(callback: (user: HomveraxUser | null) => void): () 
   // reacting to future auth events — onAuthStateChange doesn't reliably
   // fire with the existing session on every mount.
   supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session?.user) resolveUser(session.user.id);
+    if (session?.user) resolveUser();
   });
 
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -359,7 +377,7 @@ export function onAuthChange(callback: (user: HomveraxUser | null) => void): () 
         callback(null);
         return;
       }
-      resolveUser(session.user.id);
+      resolveUser();
     }
   );
   return () => subscription.unsubscribe();
