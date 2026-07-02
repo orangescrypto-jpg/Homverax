@@ -72,7 +72,7 @@ export default function EscrowDetailPage() {
       .then(([e, cfg]) => {
         setEscrow(e);
         setBank(cfg.bank);
-        setPlatformFee(cfg.platformFeePercent);
+        setPlatformFee(cfg.escrowFees?.buyerServiceChargePercent ?? PLATFORM_FEE_PERCENT);
       })
       .catch(() => toast.error("Failed to load escrow"))
       .finally(() => setIsLoading(false));
