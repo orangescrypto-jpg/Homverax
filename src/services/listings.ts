@@ -253,47 +253,34 @@ export async function getMyListings(agentId: string): Promise<PropertyListing[]>
 }
 
 // ─── Update listing ───────────────────────────────────────────────────────────
+// ✅ FIX: was building the UPDATE SQL and calling d1Exec() directly from
+// client code, which (a) got blocked for non-admins by the admin-gated D1
+// proxy, and (b) had no server-side ownership check at all — anything
+// calling this with any listing id could edit it. Now routed through
+// /api/listings/[id], which enforces "must own this listing, or be staff"
+// server-side.
 export async function updateListing(
   id: string,
   updates: Partial<PropertyListing>
 ): Promise<void> {
-  const now = new Date().toISOString();
-  const fields: string[] = ["updated_at = ?"];
-  const values: unknown[] = [now];
-
-  if (updates.title !== undefined)              { fields.push("title = ?");               values.push(updates.title); }
-  if (updates.description !== undefined)        { fields.push("description = ?");         values.push(updates.description); }
-  if (updates.category !== undefined)           { fields.push("category = ?");            values.push(updates.category); }
-  if (updates.propertyType !== undefined)       { fields.push("property_type = ?");       values.push(updates.propertyType); }
-  if (updates.listingType !== undefined)        { fields.push("listing_type = ?");        values.push(updates.listingType); }
-  if (updates.price !== undefined)              { fields.push("price = ?");               values.push(updates.price); }
-  if (updates.priceUnit !== undefined)          { fields.push("price_unit = ?");          values.push(updates.priceUnit); }
-  if (updates.location?.state !== undefined)    { fields.push("state = ?");               values.push(updates.location.state); }
-  if (updates.location?.lga !== undefined)      { fields.push("lga = ?");                 values.push(updates.location.lga); }
-  if (updates.location?.address !== undefined)  { fields.push("address = ?");             values.push(updates.location.address); }
-  if (updates.location?.latitude !== undefined) { fields.push("latitude = ?");            values.push(updates.location.latitude); }
-  if (updates.location?.longitude !== undefined){ fields.push("longitude = ?");           values.push(updates.location.longitude); }
-  if (updates.bedrooms !== undefined)           { fields.push("bedrooms = ?");            values.push(updates.bedrooms); }
-  if (updates.bathrooms !== undefined)          { fields.push("bathrooms = ?");           values.push(updates.bathrooms); }
-  if (updates.toilets !== undefined)            { fields.push("toilets = ?");             values.push(updates.toilets); }
-  if (updates.parkingSpaces !== undefined)      { fields.push("parking_spaces = ?");      values.push(updates.parkingSpaces); }
-  if (updates.areaSqM !== undefined)            { fields.push("area_sq_m = ?");           values.push(updates.areaSqM); }
-  if (updates.furnished !== undefined)          { fields.push("furnished = ?");           values.push(updates.furnished ? 1 : 0); }
-  if (updates.images !== undefined)             { fields.push("images = ?");              values.push(JSON.stringify(updates.images)); }
-  if (updates.videoUrl !== undefined)           { fields.push("video_url = ?");           values.push(updates.videoUrl); }
-  if (updates.boostType !== undefined)          { fields.push("boost_type = ?");          values.push(updates.boostType); }
-  if (updates.boostExpiresAt !== undefined)     { fields.push("boost_expires_at = ?");    values.push(updates.boostExpiresAt); }
-  if (updates.isPropertyVerified !== undefined) { fields.push("is_property_verified = ?");values.push(updates.isPropertyVerified ? 1 : 0); }
-  if (updates.isFeatured !== undefined)         { fields.push("is_featured = ?");         values.push(updates.isFeatured ? 1 : 0); }
-  if (updates.status !== undefined)             { fields.push("status = ?");              values.push(updates.status); }
-
-  values.push(id);
-  await d1Exec(`UPDATE listings SET ${fields.join(", ")} WHERE id = ?`, values);
+  const res = await fetch(`/api/listings/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: updates }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to update listing");
+  }
 }
 
 // ─── Delete listing ───────────────────────────────────────────────────────────
 export async function deleteListing(id: string): Promise<void> {
-  await d1Exec("DELETE FROM listings WHERE id = ?", [id]);
+  const res = await fetch(`/api/listings/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to delete listing");
+  }
 }
 
 // ─── Save / unsave listing ────────────────────────────────────────────────────
