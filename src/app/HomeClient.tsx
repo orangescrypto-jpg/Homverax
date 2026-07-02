@@ -116,15 +116,25 @@ export default function HomeClient() {
     async function loadListings() {
       try {
         const CATS = ["housing","commercial","land","shortlets","services","repair_construction","commercial_equipment","furniture_home"];
-        const [featuredRes, ...catResults] = await Promise.all([
+        // ✅ FIX: this fires 9 concurrent requests (1 featured + 8 per
+        // category). Promise.all() rejects the WHOLE batch if even one of
+        // those 9 fails or times out — wiping out every category's
+        // results, including ones that actually succeeded, and silently
+        // landing in the catch block below. A single flaky request made
+        // the entire "Latest Properties" section disappear. allSettled
+        // keeps whatever succeeded instead of discarding everything.
+        const [featuredResult, ...catResults] = await Promise.allSettled([
           searchListings({ boostType: "featured", limit: 3 } as any),
           ...CATS.map(cat => searchListings({ category: cat as any, limit: 4 } as any)),
         ]);
-        setFeaturedListings(featuredRes.data);
-        const featuredIds = new Set(featuredRes.data.map((l: any) => l.id));
+        const featuredData = featuredResult.status === "fulfilled" ? featuredResult.value.data : [];
+        setFeaturedListings(featuredData);
+        const featuredIds = new Set(featuredData.map((l: any) => l.id));
         const grouped: Record<string, PropertyListing[]> = {};
         CATS.forEach((cat, i) => {
-          grouped[cat] = catResults[i].data.filter((l: any) => !featuredIds.has(l.id)).slice(0, 4);
+          const result = catResults[i];
+          const data = result.status === "fulfilled" ? result.value.data : [];
+          grouped[cat] = data.filter((l: any) => !featuredIds.has(l.id)).slice(0, 4);
         });
         setCategoryListings(grouped);
       } catch {
