@@ -9,6 +9,16 @@ import { d1Query, d1Exec, newId } from "@/lib/d1";
 import { uploadListingImages as storageUploadListingImages } from "@/services/storage";
 import type { PropertyListing, ListingFilters, PaginatedResponse } from "@/types";
 
+// ✅ FIX: shared expiry check — a boost with a past boost_expires_at is
+// treated as inactive everywhere, without needing a background job to
+// physically reset the row.
+export function isBoostExpired(boostType: string | null, boostExpiresAt: string | null): boolean {
+  if (!boostType || boostType === "none") return false;
+  if (!boostExpiresAt) return false; // no expiry set = doesn't expire (e.g. legacy/manual admin boosts)
+  return new Date(boostExpiresAt).getTime() < Date.now();
+}
+
+
 // ─── Row from D1 listings table ───────────────────────────────────────────────
 // Exported so server-only API routes (e.g. /api/admin/listings) can reuse the
 // same row shape and mapping logic instead of duplicating it.
@@ -37,6 +47,7 @@ export interface ListingRow {
   video_url: string | null;
   virtual_tour_url: string | null;
   boost_type: string | null;
+  boost_expires_at: string | null;
   is_property_verified: number;
   is_featured: number;
   is_flash_deal: number;
@@ -92,7 +103,16 @@ export function rowToListing(row: ListingRow): PropertyListing {
     images,
     videoUrl: row.video_url ?? undefined,
     virtualTourUrl: row.virtual_tour_url ?? undefined,
-    boostType: (row.boost_type as PropertyListing["boostType"]) ?? "none",
+    // ✅ FIX: boosts never expired anywhere in the app — there was no
+    // boost_expires_at tracking at all. Rather than requiring a cron job to
+    // sweep expired boosts, treat an expired boost as "none" right here at
+    // read time. This alone makes every part of the app (ranking, badges,
+    // dashboard) correctly stop treating an expired boost as active,
+    // without needing a background job.
+    boostType: isBoostExpired(row.boost_type, row.boost_expires_at)
+      ? "none"
+      : (row.boost_type as PropertyListing["boostType"]) ?? "none",
+    boostExpiresAt: row.boost_expires_at ?? undefined,
     isPropertyVerified: row.is_property_verified === 1,
     isFeatured: row.is_featured === 1,
     status: (row.status as PropertyListing["status"]) ?? "active",
@@ -262,6 +282,7 @@ export async function updateListing(
   if (updates.images !== undefined)             { fields.push("images = ?");              values.push(JSON.stringify(updates.images)); }
   if (updates.videoUrl !== undefined)           { fields.push("video_url = ?");           values.push(updates.videoUrl); }
   if (updates.boostType !== undefined)          { fields.push("boost_type = ?");          values.push(updates.boostType); }
+  if (updates.boostExpiresAt !== undefined)     { fields.push("boost_expires_at = ?");    values.push(updates.boostExpiresAt); }
   if (updates.isPropertyVerified !== undefined) { fields.push("is_property_verified = ?");values.push(updates.isPropertyVerified ? 1 : 0); }
   if (updates.isFeatured !== undefined)         { fields.push("is_featured = ?");         values.push(updates.isFeatured ? 1 : 0); }
   if (updates.status !== undefined)             { fields.push("status = ?");              values.push(updates.status); }
@@ -314,12 +335,18 @@ export async function getSavedListings(userId: string): Promise<PropertyListing[
 // ─── Apply boost ──────────────────────────────────────────────────────────────
 export async function applyBoost(
   listingId: string,
-  boostType: PropertyListing["boostType"]
+  boostType: PropertyListing["boostType"],
+  durationDays?: number
 ): Promise<void> {
   const now = new Date().toISOString();
+  // ✅ FIX: boosts previously had no expiry at all — once set they stayed
+  // "active" forever with no way for the system to know it had lapsed.
+  const expiresAt = durationDays
+    ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+    : null;
   await d1Exec(
-    "UPDATE listings SET boost_type = ?, updated_at = ? WHERE id = ?",
-    [boostType, now, listingId]
+    "UPDATE listings SET boost_type = ?, boost_expires_at = ?, updated_at = ? WHERE id = ?",
+    [boostType, expiresAt, now, listingId]
   );
 }
 
