@@ -8,7 +8,7 @@ import {
   CheckCircle2, CreditCard, Crown, Eye, FileText, Gift, Heart,
   LayoutDashboard, LogOut, Menu, MessageSquare, PlusCircle, Search,
   Settings, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal,
-  Star, Tag, Users, Wrench, Home, X, Users2,
+  Star, Tag, Users, Wrench, Home, X, Users2, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -51,6 +51,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: "My Listings",    path: "/dashboard/listings",      icon: Building2 },
     { label: "Create Listing", path: "/dashboard/listings/new",  icon: PlusCircle },
     { label: "Boost Listing",  path: "/dashboard/boost",         icon: Tag },
+    { label: "Flash Deals",    path: "/dashboard/flash-deals",   icon: Zap },
     // ✅ Analytics — shown for all but gated inside the page by plan
     { label: "Analytics",      path: "/dashboard/analytics",     icon: BarChart2 },
     // ✅ Leads — shown only for Pro/Premium (added dynamically)
@@ -69,6 +70,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: "My Properties",  path: "/dashboard/listings",      icon: Home },
     { label: "Add Property",   path: "/dashboard/listings/new",  icon: PlusCircle },
     { label: "Boost Listing",  path: "/dashboard/boost",         icon: Tag },
+    { label: "Flash Deals",    path: "/dashboard/flash-deals",   icon: Zap },
     { label: "Analytics",      path: "/dashboard/analytics",     icon: BarChart2 },
     { label: "Tenant Leads",   path: "/dashboard/leads",         icon: Users2,      planRequired: "pro" },
     { label: "Escrow Deals",   path: "/dashboard/escrow",        icon: Shield,      dividerBefore: true },
@@ -85,6 +87,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: "My Services",    path: "/dashboard/listings",      icon: Wrench },
     { label: "Add Service",    path: "/dashboard/listings/new",  icon: PlusCircle },
     { label: "Boost Service",  path: "/dashboard/boost",         icon: Star },
+    { label: "Flash Deals",    path: "/dashboard/flash-deals",   icon: Zap },
     { label: "Analytics",      path: "/dashboard/analytics",     icon: BarChart2 },
     { label: "Escrow Deals",   path: "/dashboard/escrow",        icon: Shield,      dividerBefore: true },
     { label: "Messages",       path: "/messages",                icon: MessageSquare },
