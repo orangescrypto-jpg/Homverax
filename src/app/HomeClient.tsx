@@ -13,6 +13,14 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+// ✅ FIX: HomeClient.tsx used to define its own separate, duplicate
+// ListingCard function below (unrelated to the shared component used by
+// the /listings browse page). That's why fixes to the shared card — like
+// the "Escrow Protected" badge — never showed up on the homepage: this
+// file was rendering a completely different, un-fixed copy. Now using the
+// single shared component everywhere, so future fixes only need to
+// happen in one place.
+import SharedListingCard from "@/components/features/ListingCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
@@ -354,9 +362,12 @@ export default function HomeClient() {
                 </Link>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* ✅ FIX: was grid-cols-1 on mobile (single column, stacked
+                  cards) — now 2 columns on mobile, matching the category
+                  grid below and the requested 2-cards-side-by-side layout. */}
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {featuredListings.map((listing) => (
-                  <ListingCard key={listing.id} listing={listing} featured />
+                  <SharedListingCard key={listing.id} listing={listing} featured />
                 ))}
               </div>
             </div>
@@ -434,7 +445,7 @@ export default function HomeClient() {
                     {/* Listings grid — 2 cols mobile, 4 cols desktop */}
                     <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
                       {categoryListings[cat.key].map(listing => (
-                        <ListingCard key={listing.id} listing={listing} />
+                        <SharedListingCard key={listing.id} listing={listing} />
                       ))}
                     </div>
                   </div>
@@ -678,83 +689,6 @@ export default function HomeClient() {
 
       <Footer />
     </div>
-  );
-}
-
-// ─── Inline ListingCard for homepage ─────────────────────────────────────────
-function ListingCard({ listing, featured }: { listing: PropertyListing; featured?: boolean }) {
-  const image = listing.images?.[0] ?? PLACEHOLDER_IMGS[Math.abs((listing.id?.charCodeAt(0) ?? 0) % PLACEHOLDER_IMGS.length)];
-  const boost = listing.boostType && listing.boostType !== "none" ? BOOST_CONFIG[listing.boostType] : null;
-
-  return (
-    <Link
-      href={`/listings/${listing.id}`}
-      className={cn(
-        "group bg-card rounded-2xl border overflow-hidden hover:shadow-lg transition-all duration-200 flex flex-col",
-        featured ? "border-accent ring-2 ring-accent/40" : "border-border"
-      )}
-    >
-      {/* Image */}
-      <div className="relative aspect-[4/3] overflow-hidden">
-        <Image
-          src={image}
-          alt={listing.title}
-          fill
-          className="object-cover group-hover:scale-105 transition-transform duration-300"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-        />
-
-        {/* Boost badge */}
-        {boost && (
-          <div className={cn("absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-bold shadow-sm", boost.color)}>
-            <boost.icon className="w-3 h-3" />
-            {boost.label}
-          </div>
-        )}
-
-        {/* Verified */}
-        {listing.isPropertyVerified && (
-          <div className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold">
-            <CheckCircle2 className="w-2.5 h-2.5" /> Verified
-          </div>
-        )}
-
-        {/* Views */}
-        <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md">
-          <Eye className="w-2.5 h-2.5" /> {listing.viewsCount ?? 0}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-3.5 flex flex-col flex-1">
-        <p className="text-xs font-semibold text-primary mb-1 capitalize">{listing.propertyType}</p>
-        <h3 className="text-sm font-semibold text-foreground line-clamp-2 leading-snug group-hover:text-primary transition-colors mb-1.5">
-          {listing.title}
-        </h3>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-          <MapPin className="w-3 h-3 shrink-0" />
-          <span className="truncate">{listing.location?.lga}, {listing.location?.state}</span>
-        </div>
-
-        {/* Specs */}
-        {(listing.bedrooms !== undefined || listing.bathrooms !== undefined) && (
-          <div className="flex items-center gap-2.5 text-xs text-muted-foreground mb-2">
-            {listing.bedrooms !== undefined && (
-              <span className="flex items-center gap-0.5"><Bed className="w-3 h-3" /> {listing.bedrooms}</span>
-            )}
-            {listing.bathrooms !== undefined && (
-              <span className="flex items-center gap-0.5"><Bath className="w-3 h-3" /> {listing.bathrooms}</span>
-            )}
-          </div>
-        )}
-
-        <div className="mt-auto pt-2 border-t border-border">
-          <p className="text-base font-bold text-primary font-serif">
-            {formatPriceLabel(listing.price, listing.priceUnit)}
-          </p>
-        </div>
-      </div>
-    </Link>
   );
 }
 
