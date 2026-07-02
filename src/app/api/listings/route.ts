@@ -20,6 +20,16 @@ import { createClient } from "@/lib/supabase/server";
 import { d1Query, d1Exec, newId } from "@/lib/d1";
 import { LISTING_SELECT, rowToListing, type ListingRow } from "@/services/listings";
 
+// ✅ FIX: listing creation does several sequential network calls (D1 plan
+// lookup, D1 insert, D1 select-back) after the image has already been
+// uploaded. On a slow mobile connection this can run past Vercel's default
+// serverless function timeout (10s on Hobby plans), which kills the
+// connection mid-request — the browser then reports a raw "Failed to
+// fetch" with no useful error message. This raises the allowed duration.
+// Note: the Hobby plan hard-caps this at 60s regardless of the value set
+// here; upgrading to Pro allows higher ceilings if still not enough.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
