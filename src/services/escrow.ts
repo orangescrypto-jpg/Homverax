@@ -100,6 +100,15 @@ export async function getEscrowFeeBreakdown(
 // regular buyer from starting an escrow transaction, surfacing only as
 // "Failed to initiate escrow. Please try again." Now calls a public,
 // any-signed-in-user route that does the DB write server-side.
+export class DuplicateEscrowError extends Error {
+  escrow: EscrowTransaction;
+  constructor(message: string, escrow: EscrowTransaction) {
+    super(message);
+    this.name = "DuplicateEscrowError";
+    this.escrow = escrow;
+  }
+}
+
 export async function initiateEscrow(params: {
   listingId: string;
   listingTitle: string;
@@ -116,6 +125,13 @@ export async function initiateEscrow(params: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
+
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({}));
+    if (body?.error === "duplicate_order" && body?.escrow) {
+      throw new DuplicateEscrowError(body.message ?? "Duplicate order", body.escrow as EscrowTransaction);
+    }
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -177,6 +193,25 @@ export async function updateEscrowStatus(
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error ?? "Failed to update escrow");
   }
+}
+
+// Buyer-only: cancel a still-"pending" (unpaid) escrow via the party-scoped
+// DELETE route. Sets status to "cancelled" — row stays for the record.
+export async function cancelEscrow(id: string): Promise<void> {
+  const res = await fetch(`/api/escrow/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to cancel order");
+  }
+}
+
+// Admin-only: permanently delete an escrow row from the database. Goes
+// through d1Exec, which is routed via the admin/moderator-gated proxy at
+// /api/admin/d1 (see lib/d1.ts) — same pattern as the other admin-only
+// escrow actions below (adminConfirmFunding, releaseToSeller, etc). This
+// is irreversible; callers should confirm with the admin before invoking.
+export async function adminDeleteEscrow(id: string): Promise<void> {
+  await d1Exec("DELETE FROM escrows WHERE id = ?", [id]);
 }
 
 async function updateEscrowStatusAdmin(
