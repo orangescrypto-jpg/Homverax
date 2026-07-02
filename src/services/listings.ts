@@ -216,11 +216,10 @@ export async function searchListings(
 
 // ─── Get listings by agent ────────────────────────────────────────────────────
 export async function getMyListings(agentId: string): Promise<PropertyListing[]> {
-  const rows = await d1Query<ListingRow>(
-    `SELECT ${LISTING_SELECT} WHERE l.agent_id = ? ORDER BY l.created_at DESC`,
-    [agentId]
-  );
-  return rows.map(rowToListing);
+  const res = await fetch(`/api/listings/mine?agentId=${encodeURIComponent(agentId)}`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const { listings } = await res.json();
+  return listings as PropertyListing[];
 }
 
 // ─── Update listing ───────────────────────────────────────────────────────────
