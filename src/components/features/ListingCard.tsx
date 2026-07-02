@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Bath, Bed, Building2, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield } from "lucide-react";
 import { cn, formatPriceLabel } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getPlatformConfig } from "@/services/platformSettings";
 import type { PropertyListing } from "@/types";
 
 const PLACEHOLDER_IMAGES = [
@@ -29,9 +31,24 @@ interface ListingCardProps {
   onSave?: (id: string) => void;
   isSaved?: boolean;
   compact?: boolean;
+  // ✅ FIX: HomeClient.tsx passes this prop but it wasn't declared here.
+  // Styling for featured listings is already derived from
+  // listing.boostType below, so this is accepted just to avoid a
+  // type-check mismatch — no separate behavior needed.
+  featured?: boolean;
 }
 
 export default function ListingCard({ listing, onSave, isSaved, compact }: ListingCardProps) {
+  // ✅ FIX: badge now shows the REAL admin-configured buyer fee percent
+  // (getPlatformConfig() is cached after the first call, so this doesn't
+  // add a network request per card after the first one on the page).
+  const [buyerFeePercent, setBuyerFeePercent] = useState<number | null>(null);
+  useEffect(() => {
+    getPlatformConfig().then((cfg) => {
+      setBuyerFeePercent(cfg.escrowFees?.buyerServiceChargePercent ?? null);
+    }).catch(() => {});
+  }, []);
+
   const imageUrl =
     listing.images?.[0] ??
     PLACEHOLDER_IMAGES[Math.abs(listing.id.charCodeAt(0) % PLACEHOLDER_IMAGES.length)];
@@ -45,6 +62,19 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
     flat: "Flat", room: "Room", land: "Land", commercial: "Commercial",
     shortlet: "Shortlet", cleaning: "Cleaning", repairs: "Repairs",
     installation: "Installation", logistics: "Logistics", other: "Service",
+  };
+  // ✅ FIX: this map only covered a handful of values, so anything from
+  // LAND_TYPES/COMMERCIAL_TYPES/SHORTLET_TYPES/etc (e.g.
+  // "residential_land") fell through to the raw snake_case value being
+  // shown as-is. Instead of hand-maintaining every possible type here
+  // (which will always drift out of sync as new type lists get added),
+  // auto-format any unmapped value into readable Title Case.
+  const formatTypeLabel = (value?: string) => {
+    if (!value) return "";
+    return propertyTypeLabel[value] ?? value
+      .split("_")
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
   };
 
   return (
@@ -111,7 +141,7 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
       <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-1">
           <Badge variant="secondary" className="text-xs shrink-0">
-            {propertyTypeLabel[listing.propertyType] ?? listing.propertyType}
+            {formatTypeLabel(listing.propertyType)}
           </Badge>
         </div>
 
@@ -133,10 +163,18 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
 
         {/* ✅ Escrow Protected badge — shown directly on the card, before
             the listing is even opened, so buyers see the trust signal
-            immediately while browsing (not just after clicking in). */}
-        <div className="mt-2 flex items-center gap-1.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/40 rounded-lg px-2.5 py-1.5">
-          <Shield className="w-3.5 h-3.5 text-green-600 shrink-0" />
-          <span className="text-xs font-medium text-green-700 dark:text-green-400">Escrow Protected</span>
+            immediately while browsing (not just after clicking in). Fee
+            text reads the real admin-configured buyer fee percent. */}
+        <div className="mt-2 flex items-center justify-between gap-1.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/40 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-green-600 shrink-0" />
+            <span className="text-xs font-medium text-green-700 dark:text-green-400">Escrow Protected</span>
+          </div>
+          {buyerFeePercent !== null && (
+            <span className="text-[11px] text-green-600/80 dark:text-green-400/70 shrink-0">
+              {buyerFeePercent}% buyer fee
+            </span>
+          )}
         </div>
 
         {/* Property specs */}
