@@ -61,12 +61,32 @@ export async function submitSubscriptionPayment(params: {
 export async function submitBoostPayment(params: {
   userId: string; listingId: string; listingTitle: string; boostType: string; boostLabel: string; amount: number; proofFile?: File;
 }): Promise<void> {
+  // ✅ FIX: this used to call loadRecords/saveRecords here, which hit
+  // d1Query/d1Exec directly in the browser — those route through
+  // /api/admin/d1, which is admin/moderator-only, so a regular agent's
+  // submission always failed with a swallowed 403 ("Submission failed.
+  // Please contact support."). File upload already went through
+  // /api/upload (fine, stays as-is); only the D1 write needs to move
+  // server-side, via the new /api/boost/submit route (signed-in only).
   const proofUrl = params.proofFile ? await uploadBoostProof(params.userId, params.proofFile) : undefined;
-  const records = await loadRecords<BoostPaymentRecord>("boost_payments");
-  const id = newId();
-  const now = new Date().toISOString();
-  records.push({ id, ...params, proofUrl, status: "pending", createdAt: now });
-  await saveRecords("boost_payments", records);
+
+  const res = await fetch("/api/boost/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      listingId: params.listingId,
+      listingTitle: params.listingTitle,
+      boostType: params.boostType,
+      boostLabel: params.boostLabel,
+      amount: params.amount,
+      proofUrl,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Boost payment submission failed" })) as { error?: string };
+    throw new Error(err.error ?? "Boost payment submission failed");
+  }
 }
 
 export async function getUserPlanStatus(userId: string, userPlanSlug: string, expiryIso?: string): Promise<PlanStatus> {
