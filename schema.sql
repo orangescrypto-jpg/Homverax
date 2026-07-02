@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS listings (
   video_url             TEXT,
   virtual_tour_url      TEXT,
   boost_type            TEXT DEFAULT 'none',
+  boost_expires_at      TEXT,
   is_property_verified  INTEGER DEFAULT 0,
   is_featured           INTEGER DEFAULT 0,
   is_flash_deal         INTEGER DEFAULT 0,
