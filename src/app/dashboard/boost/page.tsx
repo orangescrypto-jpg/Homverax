@@ -39,7 +39,7 @@ export default function BoostListingsPage() {
   const [bank, setBank]                   = useState<BankDetails | null>(null);
   const [isLoading, setIsLoading]         = useState(true);
   const [selectedListingId, setSelectedListingId] = useState(preselectedId ?? "");
-  const [selectedBoost, setSelectedBoost] = useState<ListingBoostType>("featured");
+  const [selectedBoost, setSelectedBoost] = useState<ListingBoostType>("none");
 
   // Payment proof flow
   const [showPayment, setShowPayment]   = useState(false);
