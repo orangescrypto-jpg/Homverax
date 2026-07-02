@@ -8,7 +8,7 @@ import {
   BadgeCheck, Bath, Bed, Building2, Calendar,
   CheckCircle2, ChevronLeft, ChevronRight, Eye,
   Heart, Loader2, MapPin, Maximize2, MessageSquare,
-  Phone, Share2, Shield, Star, X, ZoomIn,
+  Phone, Share2, Shield, Star, X, ZoomIn, Zap,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -191,13 +191,13 @@ export default function ListingDetailClient({ id }: { id: string }) {
     try {
       const amount = useNegotiatedPrice && acceptedOffer
         ? acceptedOffer.proposedPrice   // Flow A — use negotiated price
-        : listing.price;                // Flow B — use listing price
+        : effectivePrice;               // Flow B — use flash deal price if active, else listing price
 
       const escrow = await initiateEscrow({
         listingId:     listing.id,
         listingTitle:  listing.title,
         listingImage:  listing.images?.[0] ?? "",
-        listingPrice:  listing.price,
+        listingPrice:  effectivePrice,
         listingLocation: listing.location?.lga ?? listing.location?.state ?? "",
         listingType:   listing.listingType,
         buyerId:       user.id,
@@ -255,7 +255,16 @@ export default function ListingDetailClient({ id }: { id: string }) {
   }
 
   const images = listing.images?.length ? listing.images : PLACEHOLDER_IMAGES;
-  const platformFee = Math.round((listing.price * platformFeePercent) / 100);
+  // ✅ FIX: flash deal price/expiry reached this page's data but was never
+  // used — every price display, fee calc, and the actual escrow amount
+  // was hardcoded to listing.price. effectivePrice is the single source
+  // of truth used everywhere below (display, fee math, Buy Now modal,
+  // and the amount actually sent to initiateEscrow).
+  const effectivePrice =
+    listing.isFlashDeal && listing.flashDealPrice != null
+      ? listing.flashDealPrice
+      : listing.price;
+  const platformFee = Math.round((effectivePrice * platformFeePercent) / 100);
 
   return (
     <div className="min-h-screen bg-background">
@@ -371,6 +380,11 @@ export default function ListingDetailClient({ id }: { id: string }) {
                       <Star className="w-3 h-3 mr-1" /> Featured
                     </Badge>
                   )}
+                  {listing.isFlashDeal && (
+                    <Badge className="bg-orange-500 text-white hover:bg-orange-500">
+                      <Zap className="w-3 h-3 mr-1" /> Flash Deal
+                    </Badge>
+                  )}
                 </div>
                 <h1 className="text-2xl font-serif font-bold text-foreground">{listing.title}</h1>
               </div>
@@ -389,9 +403,24 @@ export default function ListingDetailClient({ id }: { id: string }) {
               <span>{listing.location.address}, {listing.location.lga}, {listing.location.state}</span>
             </div>
 
-            <p className="text-3xl font-serif font-bold text-primary mb-6">
-              {formatPriceLabel(listing.price, listing.priceUnit)}
-            </p>
+            {listing.isFlashDeal && listing.flashDealPrice != null ? (
+              <div className="flex items-center gap-3 flex-wrap mb-6">
+                <p className="text-3xl font-serif font-bold text-orange-600">
+                  {formatPriceLabel(listing.flashDealPrice, listing.priceUnit)}
+                </p>
+                <p className="text-lg text-muted-foreground line-through">
+                  {formatPriceLabel(listing.price, listing.priceUnit)}
+                </p>
+                <span className="flex items-center gap-1 text-xs font-bold text-white bg-orange-500 px-2 py-1 rounded-lg">
+                  <Zap className="w-3 h-3" />
+                  -{Math.round(((listing.price - listing.flashDealPrice) / listing.price) * 100)}%
+                </span>
+              </div>
+            ) : (
+              <p className="text-3xl font-serif font-bold text-primary mb-6">
+                {formatPriceLabel(listing.price, listing.priceUnit)}
+              </p>
+            )}
 
             {/* Specs */}
             {(listing.bedrooms !== undefined || listing.bathrooms !== undefined) && (
@@ -439,8 +468,10 @@ export default function ListingDetailClient({ id }: { id: string }) {
               </p>
               <div className="space-y-1 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Listing price</span>
-                  <span className="font-medium">{formatCurrency(listing.price)}</span>
+                  <span className="text-muted-foreground">
+                    {listing.isFlashDeal && listing.flashDealPrice != null ? "Flash deal price" : "Listing price"}
+                  </span>
+                  <span className="font-medium">{formatCurrency(effectivePrice)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Escrow fee ({platformFeePercent}%)</span>
@@ -448,7 +479,7 @@ export default function ListingDetailClient({ id }: { id: string }) {
                 </div>
                 <div className="flex items-center justify-between font-bold text-primary pt-1 border-t border-primary/20">
                   <span>Total</span>
-                  <span>{formatCurrency(listing.price + platformFee)}</span>
+                  <span>{formatCurrency(effectivePrice + platformFee)}</span>
                 </div>
               </div>
             </div>
@@ -495,7 +526,9 @@ export default function ListingDetailClient({ id }: { id: string }) {
                     onClick={() => setShowBuyModal(true)}
                   >
                     <Shield className="w-4 h-4" />
-                    Buy Now — Escrow Protected
+                    {listing.isFlashDeal && listing.flashDealPrice != null
+                      ? <>Buy Now — {formatCurrency(listing.flashDealPrice)} <Zap className="w-3.5 h-3.5" /></>
+                      : "Buy Now — Escrow Protected"}
                   </Button>
                 )}
 
@@ -611,21 +644,25 @@ export default function ListingDetailClient({ id }: { id: string }) {
               </button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              You are about to initiate an escrow-protected purchase at the full listing price.
+              {listing.isFlashDeal && listing.flashDealPrice != null
+                ? "You are about to initiate an escrow-protected purchase at the discounted flash deal price."
+                : "You are about to initiate an escrow-protected purchase at the full listing price."}{" "}
               Your payment is held securely until you confirm delivery.
             </p>
             <div className="bg-secondary/50 rounded-xl p-3 mb-4 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Listing price</span>
-                <span className="font-semibold">{formatCurrency(listing.price)}</span>
+                <span className="text-muted-foreground">
+                  {listing.isFlashDeal && listing.flashDealPrice != null ? "Flash deal price" : "Listing price"}
+                </span>
+                <span className="font-semibold">{formatCurrency(effectivePrice)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Escrow fee ({platformFeePercent}%)</span>
-                <span className="font-medium">{formatCurrency(Math.round(listing.price * platformFeePercent / 100))}</span>
+                <span className="font-medium">{formatCurrency(Math.round(effectivePrice * platformFeePercent / 100))}</span>
               </div>
               <div className="flex justify-between font-bold text-primary pt-1 border-t border-primary/20">
                 <span>Total</span>
-                <span>{formatCurrency(listing.price + Math.round(listing.price * platformFeePercent / 100))}</span>
+                <span>{formatCurrency(effectivePrice + Math.round(effectivePrice * platformFeePercent / 100))}</span>
               </div>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
