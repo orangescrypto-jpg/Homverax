@@ -45,7 +45,16 @@ export async function getListingAnalytics(listingId: string): Promise<ListingAna
 }
 
 export async function getMultipleListingAnalytics(listingIds: string[]): Promise<ListingAnalytics[]> {
-  return Promise.all(listingIds.map(getListingAnalytics));
+  if (listingIds.length === 0) return [];
+  const res = await fetch("/api/listings/analytics", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ listingIds }),
+    cache: "no-store",
+  });
+  if (!res.ok) return [];
+  const { analytics } = await res.json();
+  return analytics as ListingAnalytics[];
 }
 
 export async function recordPriceChange(_listingId: string, _oldPrice: number, _newPrice: number): Promise<void> { }
