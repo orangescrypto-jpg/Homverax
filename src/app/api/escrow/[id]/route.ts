@@ -68,6 +68,22 @@ function rowToEscrow(row: EscrowRow, userId?: string): EscrowTransaction {
   };
 }
 
+const EXPIRY_HOURS = 24;
+
+// Lazily deletes a stale "pending" (never-paid) escrow — checked whenever
+// the escrow is fetched, so no cron job is needed. Deleting (not just
+// flagging) it means the buyer is immediately free to open a new order for
+// the same listing. Anything past "pending" (awaiting_confirmation,
+// funded, etc.) has an active claim on it and must not auto-expire.
+async function maybeExpire(row: EscrowRow): Promise<EscrowRow | null> {
+  if (row.status !== "pending") return row;
+  const ageMs = Date.now() - new Date(row.created_at).getTime();
+  if (ageMs < EXPIRY_HOURS * 60 * 60 * 1000) return row;
+
+  await d1Exec("DELETE FROM escrows WHERE id = ? AND status = ?", [row.id, "pending"]);
+  return null;
+}
+
 async function requireParty(id: string) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -76,10 +92,12 @@ async function requireParty(id: string) {
   const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
   if (!rows.length) return { error: "Not found" as const, status: 404 as const };
 
-  const row = rows[0];
-  if (row.buyer_id !== user.id && row.seller_id !== user.id) {
+  const initialRow = rows[0];
+  if (initialRow.buyer_id !== user.id && initialRow.seller_id !== user.id) {
     return { error: "Forbidden" as const, status: 403 as const };
   }
+  const row = await maybeExpire(initialRow);
+  if (!row) return { error: "Expired" as const, status: 410 as const };
   return { row, userId: user.id };
 }
 
@@ -122,4 +140,36 @@ export async function PATCH(
 
   const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
   return NextResponse.json({ escrow: rowToEscrow(rows[0], result.userId) });
+}
+
+// DELETE /api/escrow/[id] — buyer cancels their own escrow.
+// Only allowed while status is still "pending" (buyer intends to pay but
+// hasn't submitted a transfer yet). This permanently removes the row —
+// same as auto-expiry — so the buyer is immediately free to start a new
+// order on the same listing. Once a transfer is submitted
+// (awaiting_confirmation) or later, cancellation must go through the
+// dispute/admin flow instead — money may already be in motion.
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const result = await requireParty(id);
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  if (result.row.buyer_id !== result.userId) {
+    return NextResponse.json({ error: "Only the buyer can cancel this order" }, { status: 403 });
+  }
+  if (result.row.status !== "pending") {
+    return NextResponse.json(
+      { error: "This order can no longer be cancelled — a transfer has already been submitted" },
+      { status: 409 }
+    );
+  }
+
+  await d1Exec("DELETE FROM escrows WHERE id = ? AND status = ?", [id, "pending"]);
+
+  return NextResponse.json({ ok: true });
 }
