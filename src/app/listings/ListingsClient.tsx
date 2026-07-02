@@ -1,662 +1,477 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
-  BadgeCheck, Bath, Bed, Building2, Calendar,
-  CheckCircle2, ChevronLeft, ChevronRight, Eye,
-  Heart, Loader2, MapPin, Maximize2, MessageSquare,
-  Phone, Share2, Shield, Star, X, ZoomIn,
+  BookmarkPlus, Building2, Grid3X3, LayoutList, Map, Search,
+  SlidersHorizontal, X,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
-import Lightbox from "@/components/features/Lightbox";
+import ListingCard from "@/components/features/ListingCard";
+import MapView from "@/components/features/MapView";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { getListingById, saveListing, unsaveListing, isListingSaved } from "@/services/listings";
-import { createBooking } from "@/services/bookings";
-import { startConversation, sendMessage } from "@/services/messages";
+import {
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { searchListings, saveListing, unsaveListing } from "@/services/listings";
+import { saveSearch } from "@/services/savedSearches";
 import { useAuth } from "@/hooks/useAuth";
-import { formatPriceLabel, formatCurrency, cn } from "@/lib/utils";
+import { NIGERIAN_STATES, PROPERTY_TYPES, SERVICE_TYPES, COMMERCIAL_TYPES, LAND_TYPES, SHORTLET_TYPES, REPAIR_CONSTRUCTION_TYPES, COMMERCIAL_EQUIPMENT_TYPES, FURNITURE_HOME_TYPES } from "@/lib/constants";
 import { toast } from "sonner";
-import type { PropertyListing } from "@/types";
-import { getPlatformConfig } from "@/services/platformSettings";
-import { getAcceptedOffer, markOfferPaid } from "@/services/offers";
-import { initiateEscrow } from "@/services/escrow";
-import { useSearchParams } from "next/navigation";
-import type { Offer } from "@/services/offers";
+import type { PropertyListing, ListingFilters } from "@/types";
+import { cn } from "@/lib/utils";
 
-const PLACEHOLDER_IMAGES = [
-  "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80",
-  "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80",
-  "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80",
+type ViewMode = "grid" | "list" | "map";
+
+interface ListingsClientProps {
+  defaultFilters?: Partial<ListingFilters>;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  pageSlug?: string;
+}
+
+const PRICE_PRESETS = [
+  { label: "Under ₦500k", min: 0, max: 500000 },
+  { label: "₦500k–1M", min: 500000, max: 1000000 },
+  { label: "₦1M–3M", min: 1000000, max: 3000000 },
+  { label: "₦3M–10M", min: 3000000, max: 10000000 },
+  { label: "₦10M+", min: 10000000, max: undefined },
 ];
 
-export default function ListingDetailClient({ id }: { id: string }) {
+function ListingsContent({ defaultFilters, heroTitle, heroSubtitle, pageSlug }: ListingsClientProps) {
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
 
-  const [listing, setListing] = useState<PropertyListing | null>(null);
+  const [listings, setListings] = useState<PropertyListing[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaved, setIsSaved] = useState(false);
-  const [activeImage, setActiveImage] = useState(0);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [platformFeePercent, setPlatformFeePercent] = useState(1.5);
-  const searchParams = useSearchParams();
-  // ── Negotiation → escrow flow ──────────────────────────────────────────
-  // acceptedOffer: set when buyer arrives with an accepted offer from chat
-  // If null, buyer pays listing.price directly (Flow B)
-  const [acceptedOffer, setAcceptedOffer] = useState<Offer | null>(null);
-  const [offerLoading, setOfferLoading] = useState(false);
-  const [showBuyModal, setShowBuyModal] = useState(false);
-  const [isInitiatingEscrow, setIsInitiatingEscrow] = useState(false);
+  const [totalPages, setTotalPages] = useState(1);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(0);
 
-  // Booking form
-  const [bookingMessage, setBookingMessage] = useState("");
-  const [showBookingForm, setShowBookingForm] = useState(false);
-  const [isBooking, setIsBooking] = useState(false);
+  // Filters
+  const [query, setQuery] = useState(searchParams.get("q") ?? defaultFilters?.query ?? "");
+  const [category, setCategory] = useState(searchParams.get("category") ?? defaultFilters?.category ?? "");
+  const [propertyType, setPropertyType] = useState(searchParams.get("propertyType") ?? defaultFilters?.propertyType ?? "");
+  const [state, setState] = useState(searchParams.get("state") ?? defaultFilters?.state ?? "");
+  const [listingType, setListingType] = useState(searchParams.get("listingType") ?? defaultFilters?.listingType ?? "");
+  const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") ?? (defaultFilters?.minPrice ? String(defaultFilters.minPrice) : ""));
+  const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") ?? (defaultFilters?.maxPrice ? String(defaultFilters.maxPrice) : ""));
+  const [bedrooms, setBedrooms] = useState(searchParams.get("bedrooms") ?? (defaultFilters?.bedrooms ? String(defaultFilters.bedrooms) : ""));
+  const [verifiedOnly, setVerifiedOnly] = useState(searchParams.get("verified") === "true" || !!defaultFilters?.verifiedOnly);
+  const [furnished, setFurnished] = useState<boolean | undefined>(defaultFilters?.furnished);
 
-  // Message form
-  const [messageText, setMessageText] = useState("");
-  const [showMessageForm, setShowMessageForm] = useState(false);
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const [data, cfg] = await Promise.all([
-          getListingById(id),
-          getPlatformConfig(),
-        ]);
-        setListing(data);
-        // ✅ FIX: `cfg.platformFeePercent` doesn't exist on PlatformConfig —
-        // it's always undefined, so this silently kept the hardcoded
-        // useState(1.5) default forever. The buyer-facing checkout fee
-        // should come from cfg.escrowFees.buyerServiceChargePercent, which
-        // is what admins actually control in Settings (separate from the
-        // seller-side fees the seller sees while listing).
-        setPlatformFeePercent(cfg.escrowFees?.buyerServiceChargePercent ?? 1.0);
-        if (isAuthenticated && user && data) {
-          const saved = await isListingSaved(user.id, data.id);
-          setIsSaved(saved);
-          // ✅ Check for accepted offer from chat (Flow A)
-          // URL may carry ?acceptedOffer=offerId when buyer taps "Pay to Escrow" in chat
-          const urlOfferId = searchParams.get("acceptedOffer");
-          if (urlOfferId) {
-            setOfferLoading(true);
-            const offer = await getAcceptedOffer(data.id, user.id).catch(() => null);
-            if (offer && offer.status === "accepted") {
-              setAcceptedOffer(offer);
-            }
-            setOfferLoading(false);
-          }
-        }
-      } catch {
-        toast.error("Failed to load listing");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
-  }, [id, isAuthenticated, user]);
-
-  const handleSave = async () => {
-    if (!isAuthenticated || !user) { router.push("/login"); return; }
-    if (!listing) return;
+  const fetchListings = useCallback(async () => {
+    setIsLoading(true);
     try {
-      if (isSaved) {
-        await unsaveListing(user.id, listing.id);
-        setIsSaved(false);
+      const filters: ListingFilters = {
+        query: query || undefined,
+        category: (category as ListingFilters["category"]) || undefined,
+        propertyType: propertyType || undefined,
+        state: state || undefined,
+        listingType: listingType || undefined,
+        minPrice: minPrice ? parseInt(minPrice) : undefined,
+        maxPrice: maxPrice ? parseInt(maxPrice) : undefined,
+        bedrooms: bedrooms ? parseInt(bedrooms) : undefined,
+        verifiedOnly: verifiedOnly || undefined,
+        furnished,
+        page,
+        limit: 12,
+      };
+      const result = await searchListings(filters);
+      setListings(result.data);
+      setTotalPages(result.totalPages);
+    } catch {
+      toast.error("Failed to load listings");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [query, category, propertyType, state, listingType, minPrice, maxPrice, bedrooms, verifiedOnly, furnished, page]);
+
+  useEffect(() => { fetchListings(); }, [fetchListings]);
+
+  const handleSearch = () => { setPage(0); fetchListings(); };
+
+  const handleSaveSearch = async () => {
+    if (!isAuthenticated || !user) { router.push("/login"); return; }
+    const activeFilters: ListingFilters = {
+      query: query || undefined,
+      category: (category as ListingFilters["category"]) || undefined,
+      state: state || undefined,
+      propertyType: propertyType || undefined,
+      listingType: listingType || undefined,
+      minPrice: minPrice ? parseInt(minPrice) : undefined,
+      maxPrice: maxPrice ? parseInt(maxPrice) : undefined,
+      bedrooms: bedrooms ? parseInt(bedrooms) : undefined,
+      verifiedOnly: verifiedOnly || undefined,
+      furnished,
+    };
+    const name = [query, state, propertyType, listingType].filter(Boolean).join(", ") || "My Search";
+    try {
+      await saveSearch(user.id, name, activeFilters);
+      toast.success("Search saved! Check Saved Searches in your dashboard.");
+    } catch { toast.error("Failed to save search"); }
+  };
+
+  const handleSave = async (listingId: string) => {
+    if (!isAuthenticated || !user) { router.push("/login"); return; }
+    try {
+      if (savedIds.has(listingId)) {
+        await unsaveListing(user.id, listingId);
+        setSavedIds((prev) => { const s = new Set(prev); s.delete(listingId); return s; });
         toast.success("Removed from saved");
       } else {
-        await saveListing(user.id, listing.id);
-        setIsSaved(true);
-        toast.success("Saved!");
+        await saveListing(user.id, listingId);
+        setSavedIds((prev) => new Set(prev).add(listingId));
+        toast.success("Listing saved!");
       }
-    } catch { toast.error("Failed to save"); }
+    } catch { toast.error("Failed to save listing"); }
   };
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({ title: listing?.title, url: window.location.href });
-    } else {
-      await navigator.clipboard.writeText(window.location.href);
-      toast.success("Link copied to clipboard");
-    }
+  const applyPricePreset = (min: number, max: number | undefined) => {
+    setMinPrice(min.toString());
+    setMaxPrice(max?.toString() ?? "");
   };
 
-  const handleBooking = async () => {
-    if (!isAuthenticated || !user) { router.push("/login"); return; }
-    if (!listing) return;
-    if (!bookingMessage.trim()) { toast.error("Add a message for the agent"); return; }
-    setIsBooking(true);
-    try {
-      const booking = await createBooking({
-        listingId: listing.id,
-        listingTitle: listing.title,
-        listingImage: listing.images?.[0] ?? "",
-        listingPrice: listing.price,
-        buyerId: user.id,
-        sellerId: listing.agentId,
-        message: bookingMessage.trim(),
-      });
-      toast.success("Booking request sent! Check My Bookings for updates.");
-      setShowBookingForm(false);
-      setBookingMessage("");
-      router.push("/dashboard/bookings");
-    } catch {
-      toast.error("Failed to send booking. Please try again.");
-    } finally {
-      setIsBooking(false);
-    }
+  const clearFilters = () => {
+    setQuery(""); setCategory(""); setPropertyType(""); setState("");
+    setListingType(""); setMinPrice(""); setMaxPrice(""); setBedrooms("");
+    setVerifiedOnly(false); setFurnished(undefined); setPage(0);
   };
 
-  const handleSendMessage = async () => {
-    if (!isAuthenticated || !user) { router.push("/login"); return; }
-    if (!listing || !messageText.trim()) return;
-    setIsSendingMessage(true);
-    try {
-      const conversation = await startConversation(
-        [
-          { id: user.id, name: user.name, avatarUrl: user.avatarUrl },
-          { id: listing.agentId, name: listing.agent?.name ?? "Agent", avatarUrl: listing.agent?.avatarUrl },
-        ],
-        listing.id,
-        listing.title,
-        listing.price,        // ✅ pass listing price for offer modal prefill
-        listing.agentId       // ✅ pass seller id so chat knows who the seller is
-      );
-      await sendMessage(conversation.id, user.id, listing.agentId, messageText.trim());
-      toast.success("Message sent! View it in Messages.");
-      setShowMessageForm(false);
-      setMessageText("");
-    } catch {
-      toast.error("Failed to send message");
-    } finally {
-      setIsSendingMessage(false);
-    }
-  };
-
-  // ── Initiate escrow — handles both Flow A (negotiated) and Flow B (direct) ──
-  const handleInitiateEscrow = async (useNegotiatedPrice: boolean) => {
-    if (!isAuthenticated || !user) { router.push("/login"); return; }
-    if (!listing) return;
-    setIsInitiatingEscrow(true);
-    try {
-      const amount = useNegotiatedPrice && acceptedOffer
-        ? acceptedOffer.proposedPrice   // Flow A — use negotiated price
-        : listing.price;                // Flow B — use listing price
-
-      const escrow = await initiateEscrow({
-        listingId:     listing.id,
-        listingTitle:  listing.title,
-        listingImage:  listing.images?.[0] ?? "",
-        listingPrice:  listing.price,
-        listingLocation: listing.location?.lga ?? listing.location?.state ?? "",
-        listingType:   listing.listingType,
-        buyerId:       user.id,
-        sellerId:      listing.agentId,
-        amount,
-      });
-
-      // If this came from an accepted offer, mark the offer as paid
-      if (useNegotiatedPrice && acceptedOffer) {
-        await markOfferPaid(acceptedOffer.id, escrow.id);
-      }
-
-      setShowBuyModal(false);
-      toast.success("Escrow initiated! Complete payment to secure the deal.");
-      router.push(`/dashboard/escrow/${escrow.id}`);
-    } catch {
-      toast.error("Failed to initiate escrow. Please try again.");
-    } finally {
-      setIsInitiatingEscrow(false);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-          <div className="skeleton h-96 rounded-2xl mb-6" />
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-4">
-              <div className="skeleton h-8 w-3/4 rounded" />
-              <div className="skeleton h-4 w-1/2 rounded" />
-              <div className="skeleton h-32 rounded" />
-            </div>
-            <div className="skeleton h-72 rounded-2xl" />
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  if (!listing) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="max-w-7xl mx-auto px-4 py-20 text-center">
-          <Building2 className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-30" />
-          <h1 className="text-2xl font-serif font-bold mb-2">Listing Not Found</h1>
-          <Button onClick={() => router.push("/listings")}>Browse Listings</Button>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  const images = listing.images?.length ? listing.images : PLACEHOLDER_IMAGES;
-  const platformFee = Math.round((listing.price * platformFeePercent) / 100);
+  const activeFilterCount = [category, propertyType, state, listingType, minPrice, maxPrice, bedrooms, verifiedOnly, furnished !== undefined].filter(Boolean).length;
+  const propertyTypeOptions =
+    category === "services"             ? SERVICE_TYPES :
+    category === "commercial"           ? COMMERCIAL_TYPES :
+    category === "land"                 ? LAND_TYPES :
+    category === "shortlets"            ? SHORTLET_TYPES :
+    category === "repair_construction"  ? REPAIR_CONSTRUCTION_TYPES :
+    category === "commercial_equipment" ? COMMERCIAL_EQUIPMENT_TYPES :
+    category === "furniture_home"       ? FURNITURE_HOME_TYPES :
+    PROPERTY_TYPES;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      {/* Lightbox */}
-      {lightboxOpen && (
-        <Lightbox
-          images={images}
-          activeIndex={activeImage}
-          onClose={() => setLightboxOpen(false)}
-          onNext={() => setActiveImage((i) => (i + 1) % images.length)}
-          onPrev={() => setActiveImage((i) => (i - 1 + images.length) % images.length)}
-        />
+      {(heroTitle || heroSubtitle) && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 pb-2">
+          {heroTitle && (
+            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-foreground">{heroTitle}</h1>
+          )}
+          {heroSubtitle && (
+            <p className="text-sm text-muted-foreground mt-1">{heroSubtitle}</p>
+          )}
+        </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-          <Link href="/listings" className="flex items-center gap-1 hover:text-primary transition-colors">
-            <ChevronLeft className="w-4 h-4" /> All Listings
-          </Link>
-          <span>/</span>
-          <span className="text-foreground truncate max-w-[200px]">{listing.title}</span>
-        </div>
-
-        {/* Image Gallery */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 rounded-2xl overflow-hidden mb-4 h-[360px] lg:h-[480px]">
-          <div className="lg:col-span-2 relative group cursor-zoom-in" onClick={() => setLightboxOpen(true)}>
-            <Image
-              src={images[activeImage]}
-              alt={listing.title}
-              fill className="object-cover"
-              priority sizes="(max-width: 1024px) 100vw, 66vw"
-            />
-            {/* Zoom hint */}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 text-white rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-sm">
-                <ZoomIn className="w-4 h-4" /> View fullscreen
-              </div>
+      {/* Sticky search bar */}
+      <div className="sticky top-16 z-30 bg-background/95 backdrop-blur border-b border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5">
+              <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+              <input
+                type="text"
+                placeholder="Search location, title…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+              {query && <button onClick={() => setQuery("")}><X className="w-4 h-4 text-muted-foreground" /></button>}
             </div>
-            {images.length > 1 && (
-              <>
+
+            <Button onClick={handleSearch} className="rounded-xl shrink-0">Search</Button>
+
+            <Button
+              variant="outline"
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className={cn("rounded-xl gap-2 shrink-0", filtersOpen && "border-primary text-primary")}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {activeFilterCount > 0 && (
+                <Badge className="h-5 w-5 p-0 flex items-center justify-center text-[10px] bg-primary text-primary-foreground rounded-full">
+                  {activeFilterCount}
+                </Badge>
+              )}
+            </Button>
+
+            {/* View mode */}
+            <div className="hidden sm:flex items-center gap-1 border border-border rounded-xl p-1">
+              {([
+                { mode: "grid" as ViewMode, icon: Grid3X3 },
+                { mode: "list" as ViewMode, icon: LayoutList },
+                { mode: "map" as ViewMode, icon: Map },
+              ]).map(({ mode, icon: Icon }) => (
                 <button
-                  onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i - 1 + images.length) % images.length); }}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60"
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={cn("p-1.5 rounded-lg transition-colors",
+                    viewMode === mode ? "bg-secondary text-primary" : "text-muted-foreground hover:text-foreground"
+                  )}
+                  title={`${mode} view`}
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <Icon className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setActiveImage((i) => (i + 1) % images.length); }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </>
-            )}
-            {/* Photo count badge */}
-            <div className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
-              <Eye className="w-3 h-3" /> {images.length} photo{images.length !== 1 ? "s" : ""}
+              ))}
             </div>
           </div>
-          {images.length > 1 && (
-            <div className="hidden lg:flex flex-col gap-2">
-              {images.slice(1, 3).map((img, i) => (
-                <div
-                  key={i}
-                  className="relative flex-1 cursor-zoom-in group"
-                  onClick={() => { setActiveImage(i + 1); setLightboxOpen(true); }}
-                >
-                  <Image src={img} alt="" fill className="object-cover group-hover:brightness-90 transition-all" sizes="33vw" />
-                  {i === 1 && images.length > 3 && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <span className="text-white font-bold text-lg">+{images.length - 3}</span>
-                    </div>
-                  )}
+
+          {/* Expanded filter panel */}
+          {filtersOpen && (
+            <div className="mt-3 p-4 bg-card border border-border rounded-2xl space-y-4">
+              {/* Price presets */}
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground mb-2 block">Quick Price Range</Label>
+                <div className="flex flex-wrap gap-2">
+                  {PRICE_PRESETS.map((preset) => {
+                    const isActive = minPrice === preset.min.toString() && maxPrice === (preset.max?.toString() ?? "");
+                    return (
+                      <button
+                        key={preset.label}
+                        onClick={() => applyPricePreset(preset.min, preset.max)}
+                        className={cn(
+                          "text-xs px-3 py-1.5 rounded-lg border transition-all",
+                          isActive ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Category</Label>
+                  <Select value={category} onValueChange={(v) => { setCategory(v); setPropertyType(""); }}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All</SelectItem>
+                      <SelectItem value="housing">Housing</SelectItem>
+                      <SelectItem value="commercial">Commercial</SelectItem>
+                      <SelectItem value="land">Land</SelectItem>
+                      <SelectItem value="shortlets">Short Stays</SelectItem>
+                      <SelectItem value="services">Services</SelectItem>
+                      <SelectItem value="repair_construction">Repair & Construction</SelectItem>
+                      <SelectItem value="commercial_equipment">Commercial Equipment</SelectItem>
+                      <SelectItem value="furniture_home">Furniture & Home</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Type</Label>
+                  <Select value={propertyType} onValueChange={setPropertyType}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Any</SelectItem>
+                      {propertyTypeOptions.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">State</Label>
+                  <Select value={state} onValueChange={setState}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All states" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All</SelectItem>
+                      {NIGERIAN_STATES.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">For</Label>
+                  <Select value={listingType} onValueChange={setListingType}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Any</SelectItem>
+                      <SelectItem value="rent">Rent</SelectItem>
+                      <SelectItem value="sale">Sale</SelectItem>
+                      <SelectItem value="shortlet">Shortlet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Bedrooms</Label>
+                  <Select value={bedrooms} onValueChange={setBedrooms}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Any</SelectItem>
+                      {["1", "2", "3", "4", "5"].map((n) => (
+                        <SelectItem key={n} value={n}>{n}+</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground mb-1 block">Furnished</Label>
+                  <Select
+                    value={furnished === undefined ? "" : furnished ? "yes" : "no"}
+                    onValueChange={(v) => setFurnished(v === "" ? undefined : v === "yes")}
+                  >
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Any</SelectItem>
+                      <SelectItem value="yes">Furnished</SelectItem>
+                      <SelectItem value="no">Unfurnished</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <div className="flex gap-3 flex-1">
+                  <div className="flex-1">
+                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">Min Price (₦)</Label>
+                    <Input
+                      type="number" placeholder="0"
+                      value={minPrice} onChange={(e) => setMinPrice(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">Max Price (₦)</Label>
+                    <Input
+                      type="number" placeholder="No limit"
+                      value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm cursor-pointer self-end pb-1">
+                  <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="rounded" />
+                  Verified only
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
+                {activeFilterCount > 0 && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+                    <X className="w-3 h-3 mr-1" /> Clear all
+                  </Button>
+                )}
+                {activeFilterCount > 0 && (
+                  <Button variant="outline" size="sm" onClick={handleSaveSearch} className="gap-1.5">
+                    <BookmarkPlus className="w-3.5 h-3.5" /> Save Search
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => { handleSearch(); setFiltersOpen(false); }}>
+                  Apply Filters
+                </Button>
+              </div>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Thumbnail strip */}
-        {images.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-6">
-            {images.map((img, i) => (
-              <button
-                key={i}
-                onClick={() => setActiveImage(i)}
-                className={cn("relative w-20 h-14 rounded-lg shrink-0 overflow-hidden border-2 transition-all",
-                  activeImage === i ? "border-primary" : "border-transparent opacity-60 hover:opacity-100"
-                )}
-              >
-                <Image src={img} alt="" fill className="object-cover" sizes="80px" />
-              </button>
-            ))}
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-muted-foreground">
+            {isLoading ? "Searching…" : `${listings.length} listing${listings.length !== 1 ? "s" : ""} found`}
+          </p>
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+              <X className="w-3 h-3" /> Clear filters
+            </button>
+          )}
+        </div>
+
+        {/* Map view */}
+        {viewMode === "map" && (
+          <div className="h-[600px] mb-6 rounded-2xl overflow-hidden">
+            <MapView listings={listings} />
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main content */}
-          <div className="lg:col-span-2">
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  <Badge variant="secondary">{listing.propertyType}</Badge>
-                  <Badge variant="outline" className="capitalize">{listing.listingType}</Badge>
-                  {listing.isPropertyVerified && (
-                    <span className="badge-verified"><CheckCircle2 className="h-3 w-3" /> Verified</span>
-                  )}
-                  {listing.isFeatured && (
-                    <Badge className="bg-accent text-accent-foreground">
-                      <Star className="w-3 h-3 mr-1" /> Featured
-                    </Badge>
-                  )}
-                </div>
-                <h1 className="text-2xl font-serif font-bold text-foreground">{listing.title}</h1>
+        {/* Grid / List view */}
+        {viewMode !== "map" && (
+          <>
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} className="rounded-2xl overflow-hidden border border-border">
+                    <div className="skeleton aspect-[4/3]" />
+                    <div className="p-4 space-y-2">
+                      <div className="skeleton h-4 w-1/3 rounded" />
+                      <div className="skeleton h-5 w-4/5 rounded" />
+                      <div className="skeleton h-3 w-1/2 rounded" />
+                      <div className="skeleton h-6 w-2/5 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="flex gap-2 shrink-0">
-                <Button variant="outline" size="icon" onClick={handleSave} className={cn(isSaved && "text-red-500 border-red-200 bg-red-50")}>
-                  <Heart className={cn("w-4 h-4", isSaved && "fill-current")} />
-                </Button>
-                <Button variant="outline" size="icon" onClick={handleShare}>
-                  <Share2 className="w-4 h-4" />
-                </Button>
+            ) : listings.length === 0 ? (
+              <div className="py-24 text-center">
+                <Building2 className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-30" />
+                <h3 className="text-xl font-serif font-bold text-foreground mb-2">No listings found</h3>
+                <p className="text-muted-foreground mb-6">Try adjusting your filters or search</p>
+                <Button onClick={clearFilters} variant="outline">Clear all filters</Button>
               </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 text-muted-foreground mb-4">
-              <MapPin className="w-4 h-4" />
-              <span>{listing.location.address}, {listing.location.lga}, {listing.location.state}</span>
-            </div>
-
-            <p className="text-3xl font-serif font-bold text-primary mb-6">
-              {formatPriceLabel(listing.price, listing.priceUnit)}
-            </p>
-
-            {/* Specs */}
-            {(listing.bedrooms !== undefined || listing.bathrooms !== undefined) && (
-              <div className="flex flex-wrap gap-4 p-4 bg-secondary/50 rounded-2xl mb-6">
-                {listing.bedrooms !== undefined && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Bed className="w-4 h-4 text-primary" />
-                    <span><strong>{listing.bedrooms}</strong> Bedroom{listing.bedrooms !== 1 ? "s" : ""}</span>
-                  </div>
-                )}
-                {listing.bathrooms !== undefined && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Bath className="w-4 h-4 text-primary" />
-                    <span><strong>{listing.bathrooms}</strong> Bathroom{listing.bathrooms !== 1 ? "s" : ""}</span>
-                  </div>
-                )}
-                {listing.areaSqM && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Maximize2 className="w-4 h-4 text-primary" />
-                    <span><strong>{listing.areaSqM}</strong> m²</span>
-                  </div>
-                )}
-                {listing.furnished !== undefined && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="w-4 h-4 text-primary" />
-                    <span>{listing.furnished ? "Furnished" : "Unfurnished"}</span>
-                  </div>
-                )}
+            ) : (
+              <div className={cn(
+                "grid gap-5",
+                viewMode === "grid"
+                  ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                  : "grid-cols-1"
+              )}>
+                {listings.map((listing) => (
+                  <ListingCard
+                    key={listing.id}
+                    listing={listing}
+                    onSave={handleSave}
+                    isSaved={savedIds.has(listing.id)}
+                  />
+                ))}
               </div>
             )}
 
-            <div className="mb-8">
-              <h2 className="font-semibold text-foreground mb-3">About this property</h2>
-              <p className="text-muted-foreground leading-relaxed whitespace-pre-line">{listing.description}</p>
-            </div>
-
-            {/* Escrow info */}
-            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Shield className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-foreground">Escrow-Protected Transaction</h3>
-              </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Your payment is held securely by HomveraX until you confirm the property is as described.
-              </p>
-              <div className="space-y-1 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Listing price</span>
-                  <span className="font-medium">{formatCurrency(listing.price)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Escrow fee ({platformFeePercent}%)</span>
-                  <span className="font-medium">{formatCurrency(platformFee)}</span>
-                </div>
-                <div className="flex items-center justify-between font-bold text-primary pt-1 border-t border-primary/20">
-                  <span>Total</span>
-                  <span>{formatCurrency(listing.price + platformFee)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-4">
-            {/* Agent card */}
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <h3 className="font-semibold text-foreground mb-4">Listed by</h3>
-              <Link href={`/agents/${listing.agentId}`} className="flex items-center gap-3 mb-4 hover:opacity-80 transition-opacity">
-                <Avatar className="w-12 h-12">
-                  <AvatarFallback className="bg-primary/10 text-primary font-bold text-lg">
-                    {listing.agent?.name?.charAt(0) ?? "A"}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <p className="font-semibold text-foreground">{listing.agent?.name}</p>
-                    {listing.agent?.isVerified && <BadgeCheck className="w-4 h-4 text-green-500" />}
-                  </div>
-                  <p className="text-xs text-primary hover:underline">View profile →</p>
-                </div>
-              </Link>
-
-              <div className="space-y-2">
-                {/* ✅ Flow A: accepted offer → pay negotiated price */}
-                {acceptedOffer ? (
-                  <Button
-                    className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
-                    disabled={isInitiatingEscrow || offerLoading}
-                    onClick={() => handleInitiateEscrow(true)}
-                  >
-                    {isInitiatingEscrow
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-                      : <><Shield className="w-4 h-4" /> Pay {formatCurrency(acceptedOffer.proposedPrice)} to Escrow</>
-                    }
-                  </Button>
-                ) : (
-                  /* ✅ Flow B: no offer → direct purchase at listing price */
-                  <Button
-                    className="w-full gap-2"
-                    disabled={isInitiatingEscrow}
-                    onClick={() => setShowBuyModal(true)}
-                  >
-                    <Shield className="w-4 h-4" />
-                    Buy Now — Escrow Protected
-                  </Button>
-                )}
-
-                <Button className="w-full gap-2" variant="outline" onClick={() => setShowBookingForm(!showBookingForm)}>
-                  <Calendar className="w-4 h-4" />
-                  {showBookingForm ? "Cancel Booking" : "Request Viewing"}
+            {!isLoading && totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-10">
+                <Button variant="outline" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                  Previous
                 </Button>
-                <Button variant="outline" className="w-full gap-2" onClick={() => setShowMessageForm(!showMessageForm)}>
-                  <MessageSquare className="w-4 h-4" />
-                  {showMessageForm ? "Cancel" : "Message & Negotiate"}
+                <span className="text-sm text-muted-foreground px-2">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <Button variant="outline" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                  Next
                 </Button>
-                {listing.agent?.phone && (
-                  <Button variant="outline" className="w-full gap-2" asChild>
-                    <a href={`tel:${listing.agent.phone}`}>
-                      <Phone className="w-4 h-4" /> Call Agent
-                    </a>
-                  </Button>
-                )}
               </div>
-
-              {/* Booking form */}
-              {showBookingForm && (
-                <div className="mt-4 pt-4 border-t border-border space-y-3">
-                  <p className="text-sm font-medium text-foreground">Request a viewing or booking</p>
-                  <Textarea
-                    placeholder="Introduce yourself, mention your move-in date, and any questions…"
-                    value={bookingMessage}
-                    onChange={(e) => setBookingMessage(e.target.value)}
-                    rows={3}
-                    className="text-sm"
-                  />
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    disabled={isBooking || !bookingMessage.trim()}
-                    onClick={handleBooking}
-                  >
-                    {isBooking ? "Sending…" : "Send Booking Request"}
-                  </Button>
-                </div>
-              )}
-
-              {/* Message form */}
-              {showMessageForm && (
-                <div className="mt-4 pt-4 border-t border-border space-y-3">
-                  <p className="text-sm font-medium text-foreground">Message the agent</p>
-                  <Textarea
-                    placeholder="Ask about the property, availability, or pricing…"
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    rows={3}
-                    className="text-sm"
-                  />
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    size="sm"
-                    disabled={isSendingMessage || !messageText.trim()}
-                    onClick={handleSendMessage}
-                  >
-                    {isSendingMessage ? "Sending…" : "Send Message"}
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* ✅ FIX: Safety Tip moved to appear right after the action
-                buttons (Buy Now / Request Viewing / Message), instead of
-                after Listing stats — it's more relevant right where the
-                person is about to act on payment. */}
-            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-2xl p-4">
-              <div className="flex items-start gap-2">
-                <Shield className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-1">Safety Tip</p>
-                  <p className="text-xs text-amber-700 dark:text-amber-300/80">
-                    Always use HomveraX escrow for payments. Never pay directly before verifying the property.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <h3 className="font-semibold text-foreground mb-3 text-sm">Listing stats</h3>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-lg font-bold text-foreground">{listing.viewsCount}</p>
-                  <p className="text-xs text-muted-foreground">Views</p>
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-foreground">{listing.inquiriesCount}</p>
-                  <p className="text-xs text-muted-foreground">Inquiries</p>
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-foreground">{listing.savedCount}</p>
-                  <p className="text-xs text-muted-foreground">Saved</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            )}
+          </>
+        )}
       </div>
-
-      {/* ✅ Buy Now modal — Flow B direct purchase confirmation */}
-      {showBuyModal && listing && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Confirm Purchase</h3>
-              <button onClick={() => setShowBuyModal(false)}>
-                <X className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              You are about to initiate an escrow-protected purchase at the full listing price.
-              Your payment is held securely until you confirm delivery.
-            </p>
-            <div className="bg-secondary/50 rounded-xl p-3 mb-4 space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Listing price</span>
-                <span className="font-semibold">{formatCurrency(listing.price)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Escrow fee ({platformFeePercent}%)</span>
-                <span className="font-medium">{formatCurrency(Math.round(listing.price * platformFeePercent / 100))}</span>
-              </div>
-              <div className="flex justify-between font-bold text-primary pt-1 border-t border-primary/20">
-                <span>Total</span>
-                <span>{formatCurrency(listing.price + Math.round(listing.price * platformFeePercent / 100))}</span>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mb-4">
-              💬 Want to negotiate the price first?{" "}
-              <button
-                className="text-primary font-medium underline"
-                onClick={() => { setShowBuyModal(false); setShowMessageForm(true); }}
-              >
-                Message the seller
-              </button>
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowBuyModal(false)}>
-                Cancel
-              </Button>
-              <Button
-                className="flex-1 gap-2"
-                disabled={isInitiatingEscrow}
-                onClick={() => handleInitiateEscrow(false)}
-              >
-                {isInitiatingEscrow
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-                  : <><Shield className="w-4 h-4" /> Confirm & Pay</>
-                }
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <Footer />
     </div>
+  );
+}
+
+export default function ListingsClient(props: ListingsClientProps = {}) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <ListingsContent {...props} />
+    </Suspense>
   );
 }
