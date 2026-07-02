@@ -206,6 +206,7 @@ export async function searchListings(
   if (filters.maxPrice !== undefined)     sp.set("maxPrice", String(filters.maxPrice));
   if (filters.bedrooms !== undefined)     sp.set("bedrooms", String(filters.bedrooms));
   if (filters.query)                      sp.set("query", filters.query);
+  if (filters.boostType)                  sp.set("boostType", filters.boostType);
 
   const res = await fetch(`/api/listings?${sp.toString()}`, { cache: "no-store" });
   if (!res.ok) {
