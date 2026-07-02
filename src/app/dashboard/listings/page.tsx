@@ -119,6 +119,12 @@ export default function MyListingsPage() {
                   {listing.boostType !== "none" && (
                     <Badge className="text-xs bg-accent/20 text-accent-foreground border-accent/30">
                       <Star className="w-2.5 h-2.5 mr-1" /> {listing.boostType?.replace("_", " ")}
+                      {/* ✅ FIX: boosts previously showed no expiry info at all */}
+                      {listing.boostExpiresAt && (
+                        <span className="ml-1 opacity-80">
+                          · {Math.max(0, Math.ceil((new Date(listing.boostExpiresAt).getTime() - Date.now()) / 86400000))}d left
+                        </span>
+                      )}
                     </Badge>
                   )}
                 </div>
