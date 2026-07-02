@@ -6,6 +6,7 @@ import { d1Query, d1Exec, newId } from "@/lib/d1";
 import { uploadSubscriptionProof, uploadBoostProof } from "@/services/storage";
 import { getPlatformConfig } from "@/services/platformSettings";
 import { updateUserSubscription, getUserById } from "@/services/auth";
+import { applyBoost } from "@/services/listings";
 import { sendSubscriptionActivatedEmail } from "@/services/emailService";
 import { addMonths } from "date-fns";
 import type { SubscriptionPlan } from "@/types";
@@ -148,7 +149,25 @@ export async function rejectSubscriptionPayment(paymentId: string, processedByNa
 }
 
 export async function approveBoostPayment(paymentId: string, processedByName: string): Promise<void> {
+  // 1. Mark payment as approved in the records
   await updateBoostPayment(paymentId, "approved", processedByName);
+
+  // ✅ FIX: this used to stop here — the payment record was marked
+  // "approved" but the boost was NEVER actually applied to the listing
+  // itself, so listings stayed boostType "none" forever even after
+  // approval. Look up the payment, find its matching boost option's
+  // duration, and actually apply the boost with an expiry.
+  const records = await loadRecords<BoostPaymentRecord>("boost_payments");
+  const payment = records.find((r) => r.id === paymentId);
+  if (!payment) return;
+
+  const cfg = await getPlatformConfig();
+  const option = cfg.boostOptions.find((o) => o.type === payment.boostType);
+  await applyBoost(
+    payment.listingId,
+    payment.boostType as any,
+    option?.durationDays
+  );
 }
 
 export async function rejectBoostPayment(paymentId: string, processedByName: string, note?: string): Promise<void> {
