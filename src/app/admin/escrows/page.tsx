@@ -364,6 +364,17 @@ export default function AdminEscrowsPage() {
                           Check your bank app for a transfer with this reference of{" "}
                           <strong>{formatCurrency(e.amount + e.platformFee)}</strong>.
                         </p>
+                        {(e as any).receiptUrl && (
+                          <a
+                            href={(e as any).receiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(ev) => ev.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold text-blue-700 dark:text-blue-300 underline"
+                          >
+                            View uploaded receipt →
+                          </a>
+                        )}
                       </div>
                     )}
 
