@@ -210,6 +210,13 @@ const PROPERTY_FEATURES = [
   "CCTV", "Gym", "Air Conditioning", "Balcony", "Garden",
   "Elevator/Lift", "Solar Power", "Smart Home", "En-suite Bathroom",
   "Open Plan Kitchen", "Tiled Floors", "POP Ceiling",
+  "Fitted Wardrobe", "Walk-in Closet", "Prepaid Meter", "Water Heater",
+  "Furnished", "Serviced Apartment", "24/7 Power Supply", "Fire Alarm",
+  "Intercom System", "Gated Estate", "Playground", "Parking Space",
+  "Visitors' Parking", "Rooftop Terrace", "Jacuzzi", "Pet Friendly",
+  "Wheelchair Accessible", "Fenced Compound", "CCTV Monitored Estate",
+  "Estate Security", "Waste Disposal", "Cinema Room", "Study Room",
+  "Store Room", "Guest Toilet", "Laundry Room", "WiFi/Internet Ready",
 ];
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
