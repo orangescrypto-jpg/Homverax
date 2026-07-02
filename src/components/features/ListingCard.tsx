@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bath, Bed, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield, Zap } from "lucide-react";
+import { Bath, Bed, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield, Zap, Clock } from "lucide-react";
 import { cn, formatPriceLabel, formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPlatformConfig } from "@/services/platformSettings";
+import { useCountdown } from "@/hooks/useCountdown";
 import type { PropertyListing } from "@/types";
 
 const PLACEHOLDER_IMAGES = [
@@ -56,6 +57,10 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
   const boost = BOOST_CONFIG[listing.boostType ?? "none"];
   const isFeatured = listing.boostType === "featured";
   const priceLabel = formatPriceLabel(listing.price, listing.priceUnit);
+
+  // ✅ FIX: flash deal badge rendered but had no live countdown anywhere.
+  const countdown = useCountdown(listing.isFlashDeal ? listing.flashDealExpiresAt : null);
+  const showFlashDeal = listing.isFlashDeal && !countdown.expired;
 
   const propertyTypeLabel: Record<string, string> = {
     apartment: "Apartment", house: "House", duplex: "Duplex",
@@ -108,13 +113,20 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
               but was never rendered anywhere except the dedicated
               /flash-deals page. Show the discount badge here so it shows up
               on the home page and /listings grid too. */}
-          {listing.isFlashDeal && (
+          {showFlashDeal && (
             <div className={cn(
               "absolute left-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-orange-500 text-white",
               boost ? "top-11" : "top-3"
             )}>
               <Zap className="w-3 h-3" />
               Flash Deal
+              {countdown.label && (
+                <>
+                  <span className="mx-0.5 opacity-60">•</span>
+                  <Clock className="w-3 h-3" />
+                  {countdown.label}
+                </>
+              )}
             </div>
           )}
 
@@ -172,7 +184,7 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
         </div>
 
         {/* Price — flash deal shows struck-through original + discounted price */}
-        {listing.isFlashDeal && listing.flashDealPrice != null ? (
+        {showFlashDeal && listing.flashDealPrice != null ? (
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             <p className="text-lg font-bold text-orange-600 font-serif">
               {formatCurrency(listing.flashDealPrice)}
