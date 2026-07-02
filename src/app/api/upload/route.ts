@@ -12,6 +12,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { uploadToR2 } from "@/lib/r2";
 
+// ✅ FIX: same timeout reasoning as /api/listings — uploading a file over a
+// slow mobile connection can run past the default serverless timeout.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   // Auth check — must be signed in
   const supabase = await createClient();
