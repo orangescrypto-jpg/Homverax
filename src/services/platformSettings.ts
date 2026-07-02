@@ -453,14 +453,16 @@ export const DEFAULT_CONFIG: PlatformConfig = {
 
 // ─── D1-backed cache + CRUD ───────────────────────────────────────────────────
 
-let _cache: PlatformConfig | null = null;
-let _cacheErrorCount = 0;
-const MAX_ERROR_RETRIES = 3;
-
-export async function getPlatformConfig(): Promise<PlatformConfig> {
-  if (_cache) return _cache;
-  if (_cacheErrorCount >= MAX_ERROR_RETRIES) return DEFAULT_CONFIG;
-
+// ✅ FIX: this used to be `getPlatformConfig()` itself, called directly
+// from client components via d1Query(). After the admin-gated D1 proxy
+// was introduced, this silently failed for every non-staff visitor,
+// meaning testimonials, homepage stats, and — critically — the buyer
+// escrow fee percent all silently fell back to hardcoded defaults for
+// every regular visitor, ignoring whatever the admin actually configured.
+// This function does the real DB read + merge and is meant to be called
+// server-side only (from the /api/config route). The public
+// getPlatformConfig() below is now a thin client-side fetch wrapper.
+export async function loadPlatformConfigFromDb(): Promise<PlatformConfig> {
   try {
     const rows = await d1Query<{ value: string }>(
       "SELECT value FROM platform_settings WHERE key = 'config'",
@@ -468,7 +470,7 @@ export async function getPlatformConfig(): Promise<PlatformConfig> {
     );
     if (rows.length && rows[0].value) {
       const data = JSON.parse(rows[0].value) as Partial<PlatformConfig>;
-      _cache = {
+      return {
         ...DEFAULT_CONFIG,
         ...data,
         escrowFees: { ...DEFAULT_ESCROW_FEES, ...(data.escrowFees ?? {}) },
@@ -493,10 +495,30 @@ export async function getPlatformConfig(): Promise<PlatformConfig> {
         boostOptions: data.boostOptions?.length
           ? data.boostOptions : DEFAULT_CONFIG.boostOptions,
       };
-      _cacheErrorCount = 0;
-      return _cache;
     }
     return DEFAULT_CONFIG;
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+let _cache: PlatformConfig | null = null;
+let _cacheErrorCount = 0;
+const MAX_ERROR_RETRIES = 3;
+
+// Client-side: fetch from the public /api/config route (which calls
+// loadPlatformConfigFromDb() above server-side), with in-memory caching
+// so we don't re-fetch on every component mount.
+export async function getPlatformConfig(): Promise<PlatformConfig> {
+  if (_cache) return _cache;
+  if (_cacheErrorCount >= MAX_ERROR_RETRIES) return DEFAULT_CONFIG;
+
+  try {
+    const res = await fetch("/api/config", { cache: "no-store" });
+    if (!res.ok) { _cacheErrorCount++; return DEFAULT_CONFIG; }
+    _cache = await res.json();
+    _cacheErrorCount = 0;
+    return _cache!;
   } catch {
     _cacheErrorCount++;
     return DEFAULT_CONFIG;
