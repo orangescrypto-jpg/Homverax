@@ -74,6 +74,7 @@ export const LISTING_BOOST_OPTIONS: ListingBoostOption[] = [
     description: "Standard visibility, shown in regular search results",
     price: 0,
     icon: "eye",
+    durationDays: 0,
   },
   {
     type: "featured",
@@ -81,6 +82,7 @@ export const LISTING_BOOST_OPTIONS: ListingBoostOption[] = [
     description: "Larger card with gold border, shown prominently. Gets 5× more views on average.",
     price: 3000,
     icon: "star",
+    durationDays: 7,
   },
   {
     type: "top_placement",
@@ -88,6 +90,7 @@ export const LISTING_BOOST_OPTIONS: ListingBoostOption[] = [
     description: "Pinned to the very top of search results for 7 days. Maximum visibility.",
     price: 5000,
     icon: "rocket",
+    durationDays: 7,
   },
   {
     type: "urgent",
@@ -95,6 +98,7 @@ export const LISTING_BOOST_OPTIONS: ListingBoostOption[] = [
     description: "Bold urgency badge signals serious sellers. Attracts ready-to-buy tenants.",
     price: 2000,
     icon: "flame",
+    durationDays: 14,
   },
 ];
 
