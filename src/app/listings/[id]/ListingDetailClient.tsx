@@ -8,7 +8,7 @@ import {
   BadgeCheck, Bath, Bed, Building2, Calendar,
   CheckCircle2, ChevronLeft, ChevronRight, Eye,
   Heart, Loader2, MapPin, Maximize2, MessageSquare,
-  Phone, Share2, Shield, Star, X, ZoomIn, Zap,
+  Phone, Share2, Shield, Star, X, ZoomIn, Zap, Clock,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -23,6 +23,7 @@ import { getListingById, saveListing, unsaveListing, isListingSaved } from "@/se
 import { createBooking } from "@/services/bookings";
 import { startConversation, sendMessage } from "@/services/messages";
 import { useAuth } from "@/hooks/useAuth";
+import { useCountdown } from "@/hooks/useCountdown";
 import { formatPriceLabel, formatCurrency, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { PropertyListing } from "@/types";
@@ -56,6 +57,11 @@ export default function ListingDetailClient({ id }: { id: string }) {
   const [offerLoading, setOfferLoading] = useState(false);
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [isInitiatingEscrow, setIsInitiatingEscrow] = useState(false);
+
+  // ✅ FIX: flash deal badge/price had no live countdown anywhere on this
+  // page. Hook is called unconditionally (before the `if (!listing)`
+  // early return below) since listing may still be null on first render.
+  const countdown = useCountdown(listing?.isFlashDeal ? listing.flashDealExpiresAt : null);
 
   // Booking form
   const [bookingMessage, setBookingMessage] = useState("");
@@ -260,8 +266,18 @@ export default function ListingDetailClient({ id }: { id: string }) {
   // was hardcoded to listing.price. effectivePrice is the single source
   // of truth used everywhere below (display, fee math, Buy Now modal,
   // and the amount actually sent to initiateEscrow).
+  const showFlashDeal = listing.isFlashDeal && !countdown.expired;
+  // ✅ FIX: button always said "Buy Now" even for rentals/shortlets/services,
+  // which doesn't make sense when you're paying rent or booking a service.
+  // Use a verb that matches the listing type; escrow protection applies
+  // to all of them, so the "— Escrow Protected" suffix stays generic.
+  const ctaVerb =
+    listing.listingType === "rent" ? "Pay Rent"
+    : listing.listingType === "shortlet" ? "Book Now"
+    : listing.listingType === "service" ? "Hire Now"
+    : "Buy Now";
   const effectivePrice =
-    listing.isFlashDeal && listing.flashDealPrice != null
+    showFlashDeal && listing.flashDealPrice != null
       ? listing.flashDealPrice
       : listing.price;
   const platformFee = Math.round((effectivePrice * platformFeePercent) / 100);
@@ -380,9 +396,14 @@ export default function ListingDetailClient({ id }: { id: string }) {
                       <Star className="w-3 h-3 mr-1" /> Featured
                     </Badge>
                   )}
-                  {listing.isFlashDeal && (
+                  {showFlashDeal && (
                     <Badge className="bg-orange-500 text-white hover:bg-orange-500">
                       <Zap className="w-3 h-3 mr-1" /> Flash Deal
+                      {countdown.label && (
+                        <span className="ml-1.5 inline-flex items-center gap-1 opacity-90">
+                          <Clock className="w-3 h-3" /> {countdown.label}
+                        </span>
+                      )}
                     </Badge>
                   )}
                 </div>
@@ -403,7 +424,7 @@ export default function ListingDetailClient({ id }: { id: string }) {
               <span>{listing.location.address}, {listing.location.lga}, {listing.location.state}</span>
             </div>
 
-            {listing.isFlashDeal && listing.flashDealPrice != null ? (
+            {showFlashDeal && listing.flashDealPrice != null ? (
               <div className="flex items-center gap-3 flex-wrap mb-6">
                 <p className="text-3xl font-serif font-bold text-orange-600">
                   {formatPriceLabel(listing.flashDealPrice, listing.priceUnit)}
@@ -415,6 +436,12 @@ export default function ListingDetailClient({ id }: { id: string }) {
                   <Zap className="w-3 h-3" />
                   -{Math.round(((listing.price - listing.flashDealPrice) / listing.price) * 100)}%
                 </span>
+                {countdown.label && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-1 rounded-lg">
+                    <Clock className="w-3 h-3" />
+                    Ends in {countdown.label}
+                  </span>
+                )}
               </div>
             ) : (
               <p className="text-3xl font-serif font-bold text-primary mb-6">
@@ -469,7 +496,7 @@ export default function ListingDetailClient({ id }: { id: string }) {
               <div className="space-y-1 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">
-                    {listing.isFlashDeal && listing.flashDealPrice != null ? "Flash deal price" : "Listing price"}
+                    {showFlashDeal && listing.flashDealPrice != null ? "Flash deal price" : "Listing price"}
                   </span>
                   <span className="font-medium">{formatCurrency(effectivePrice)}</span>
                 </div>
@@ -526,9 +553,9 @@ export default function ListingDetailClient({ id }: { id: string }) {
                     onClick={() => setShowBuyModal(true)}
                   >
                     <Shield className="w-4 h-4" />
-                    {listing.isFlashDeal && listing.flashDealPrice != null
-                      ? <>Buy Now — {formatCurrency(listing.flashDealPrice)} <Zap className="w-3.5 h-3.5" /></>
-                      : "Buy Now — Escrow Protected"}
+                    {showFlashDeal && listing.flashDealPrice != null
+                      ? <>{ctaVerb} — {formatCurrency(listing.flashDealPrice)} <Zap className="w-3.5 h-3.5" /></>
+                      : `${ctaVerb} — Escrow Protected`}
                   </Button>
                 )}
 
@@ -638,21 +665,21 @@ export default function ListingDetailClient({ id }: { id: string }) {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Confirm Purchase</h3>
+              <h3 className="font-semibold text-foreground">Confirm {ctaVerb === "Pay Rent" ? "Rent Payment" : ctaVerb === "Book Now" ? "Booking" : ctaVerb === "Hire Now" ? "Hire" : "Purchase"}</h3>
               <button onClick={() => setShowBuyModal(false)}>
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              {listing.isFlashDeal && listing.flashDealPrice != null
-                ? "You are about to initiate an escrow-protected purchase at the discounted flash deal price."
-                : "You are about to initiate an escrow-protected purchase at the full listing price."}{" "}
+              {showFlashDeal && listing.flashDealPrice != null
+                ? "You are about to initiate an escrow-protected transaction at the discounted flash deal price."
+                : "You are about to initiate an escrow-protected transaction at the full listing price."}{" "}
               Your payment is held securely until you confirm delivery.
             </p>
             <div className="bg-secondary/50 rounded-xl p-3 mb-4 space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
-                  {listing.isFlashDeal && listing.flashDealPrice != null ? "Flash deal price" : "Listing price"}
+                  {showFlashDeal && listing.flashDealPrice != null ? "Flash deal price" : "Listing price"}
                 </span>
                 <span className="font-semibold">{formatCurrency(effectivePrice)}</span>
               </div>
