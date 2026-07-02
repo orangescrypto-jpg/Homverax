@@ -175,72 +175,43 @@ export async function createListing(
 }
 
 // ─── Get single listing ───────────────────────────────────────────────────────
+// ✅ FIX: was calling d1Query()/d1Exec() directly from the client, which
+// blocked every non-staff visitor from viewing a listing at all once the
+// admin-gated D1 proxy was introduced. Now a public route.
 export async function getListingById(id: string): Promise<PropertyListing | null> {
-  const rows = await d1Query<ListingRow>(`SELECT ${LISTING_SELECT} WHERE l.id = ?`, [id]);
-  if (!rows.length) return null;
-  // Increment views async
-  const now = new Date().toISOString();
-  d1Exec("UPDATE listings SET views = views + 1, updated_at = ? WHERE id = ?", [now, id]).catch(() => {});
-  return rowToListing(rows[0]);
+  const res = await fetch(`/api/listings/${id}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const { listing } = await res.json();
+  return listing as PropertyListing;
 }
 
 // ─── Search / filter listings ─────────────────────────────────────────────────
+// ✅ FIX: was calling d1Query() directly from the client, which — after the
+// admin-gated D1 proxy was introduced — silently blocked every regular
+// visitor (anyone not logged in as staff) from browsing listings at all.
+// Browsing must never require authentication; now calls a public route.
 export async function searchListings(
   filters: ListingFilters
 ): Promise<PaginatedResponse<PropertyListing>> {
-  const pageLimit = filters.limit ?? 12;
-  const conditions: string[] = ["l.status = 'active'"];
-  const params: unknown[] = [];
+  const sp = new URLSearchParams();
+  if (filters.limit !== undefined)        sp.set("limit", String(filters.limit));
+  if (filters.page !== undefined)         sp.set("page", String(filters.page));
+  if (filters.category)                   sp.set("category", filters.category);
+  if (filters.state)                      sp.set("state", filters.state);
+  if (filters.propertyType)               sp.set("propertyType", filters.propertyType);
+  if (filters.listingType)                sp.set("listingType", filters.listingType);
+  if (filters.verifiedOnly)               sp.set("verifiedOnly", "true");
+  if (filters.furnished !== undefined)    sp.set("furnished", String(filters.furnished));
+  if (filters.minPrice !== undefined)     sp.set("minPrice", String(filters.minPrice));
+  if (filters.maxPrice !== undefined)     sp.set("maxPrice", String(filters.maxPrice));
+  if (filters.bedrooms !== undefined)     sp.set("bedrooms", String(filters.bedrooms));
+  if (filters.query)                      sp.set("query", filters.query);
 
-  if (filters.category)     { conditions.push("l.category = ?");      params.push(filters.category); }
-  if (filters.state)        { conditions.push("l.state = ?");          params.push(filters.state); }
-  if (filters.propertyType) { conditions.push("l.property_type = ?");  params.push(filters.propertyType); }
-  if (filters.listingType)  { conditions.push("l.listing_type = ?");   params.push(filters.listingType); }
-  if (filters.verifiedOnly) { conditions.push("l.is_property_verified = 1"); }
-  if (filters.furnished !== undefined) { conditions.push("l.furnished = ?"); params.push(filters.furnished ? 1 : 0); }
-  if (filters.minPrice !== undefined)  { conditions.push("l.price >= ?"); params.push(filters.minPrice); }
-  if (filters.maxPrice !== undefined)  { conditions.push("l.price <= ?"); params.push(filters.maxPrice); }
-  if (filters.bedrooms !== undefined)  { conditions.push("l.bedrooms >= ?"); params.push(filters.bedrooms); }
-  if (filters.query) {
-    const q = `%${filters.query}%`;
-    conditions.push("(l.title LIKE ? OR l.description LIKE ? OR l.address LIKE ? OR l.state LIKE ?)");
-    params.push(q, q, q, q);
+  const res = await fetch(`/api/listings?${sp.toString()}`, { cache: "no-store" });
+  if (!res.ok) {
+    return { data: [], total: 0, page: filters.page ?? 0, limit: filters.limit ?? 12, totalPages: 1 };
   }
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  // Fetch a 3× pool for re-ranking by boost
-  const fetchLimit = (pageLimit + 1) * 3;
-  params.push(fetchLimit);
-
-  const rows = await d1Query<ListingRow>(
-    `SELECT ${LISTING_SELECT} ${where} ORDER BY l.created_at DESC LIMIT ?`,
-    params
-  );
-
-  let items = rows.map(rowToListing);
-
-  // Re-rank by boost score (same logic as Firebase version)
-  const getScore = (l: PropertyListing & { agentRankBoost?: number }): number => {
-    let score = 0;
-    if (l.boostType === "top_placement") score += 1000;
-    if (l.boostType === "featured")      score += 500;
-    if (l.boostType === "urgent")        score += 50;
-    score += (l.agentRankBoost ?? 0) * 100;
-    return score;
-  };
-
-  items.sort((a, b) => getScore(b as PropertyListing & { agentRankBoost?: number }) - getScore(a as PropertyListing & { agentRankBoost?: number }));
-
-  const hasMore = items.length > pageLimit;
-  const page = filters.page ?? 0;
-
-  return {
-    data: items.slice(0, pageLimit),
-    total: items.length,
-    page,
-    limit: pageLimit,
-    totalPages: hasMore ? page + 2 : page + 1,
-  };
+  return res.json();
 }
 
 // ─── Get listings by agent ────────────────────────────────────────────────────
