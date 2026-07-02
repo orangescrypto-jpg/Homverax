@@ -189,10 +189,11 @@ async function updateEscrowStatusAdmin(
   if (extra) await updateMeta(id, extra);
 }
 
-export async function submitTransferProof(id: string, reference: string): Promise<void> {
+export async function submitTransferProof(id: string, reference: string, receiptUrl?: string): Promise<void> {
   await updateEscrowStatus(id, "awaiting_confirmation", {
     transferReference: reference,
     transferSubmittedAt: new Date().toISOString(),
+    ...(receiptUrl ? { receiptUrl } : {}),
   });
 }
 
