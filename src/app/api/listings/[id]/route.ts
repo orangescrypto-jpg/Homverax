@@ -36,6 +36,20 @@ async function getAuthorizedListing(request: NextRequest, id: string) {
   return { user, isStaff };
 }
 
+// ✅ FIX: getListingById() (used by every listing detail page) also called
+// d1Query()/d1Exec() directly from the client — same public-access
+// regression as searchListings. This handler is intentionally public.
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const rows = await d1Query<ListingRow>(`SELECT ${LISTING_SELECT} WHERE l.id = ?`, [id]);
+  if (!rows.length) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+
+  const now = new Date().toISOString();
+  d1Exec("UPDATE listings SET views = views + 1, updated_at = ? WHERE id = ?", [now, id]).catch(() => {});
+
+  return NextResponse.json({ listing: rowToListing(rows[0]) });
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await getAuthorizedListing(request, id);
