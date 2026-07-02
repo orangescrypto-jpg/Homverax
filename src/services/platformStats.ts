@@ -12,21 +12,13 @@ export interface PlatformStats {
   escrowTotal: number;
 }
 
-interface CountRow { cnt: number; }
-interface SumRow { total: number | null; }
-
+// ✅ FIX: was calling d1Query() directly from the client homepage, which —
+// after the admin-gated D1 proxy was introduced — silently failed for
+// every regular visitor. Now calls a public stats route.
 export async function fetchPlatformStats(): Promise<PlatformStats> {
-  const [activeListings, totalUsers, verifiedAgents, escrowTotal] = await Promise.all([
-    d1Query<CountRow>("SELECT COUNT(*) as cnt FROM listings WHERE status = 'active'", []),
-    d1Query<CountRow>("SELECT COUNT(*) as cnt FROM users", []),
-    d1Query<CountRow>("SELECT COUNT(*) as cnt FROM users WHERE is_verified = 1", []),
-    d1Query<SumRow>("SELECT COALESCE(SUM(amount),0) as total FROM escrows WHERE status IN ('funded','held','inspection','released')", []),
-  ]);
-
-  return {
-    activeListings: activeListings[0]?.cnt ?? 0,
-    totalUsers: totalUsers[0]?.cnt ?? 0,
-    verifiedAgents: verifiedAgents[0]?.cnt ?? 0,
-    escrowTotal: escrowTotal[0]?.total ?? 0,
-  };
+  const res = await fetch("/api/stats", { cache: "no-store" });
+  if (!res.ok) {
+    return { activeListings: 0, totalUsers: 0, verifiedAgents: 0, escrowTotal: 0 };
+  }
+  return res.json();
 }
