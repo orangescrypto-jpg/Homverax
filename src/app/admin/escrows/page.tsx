@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import {
   AlertOctagon, BanknoteIcon, Building2, CheckCircle2, Copy,
-  Clock, Loader2, Search, Shield, X,
+  Clock, Loader2, Search, Shield, Trash2, X,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { getAllEscrows, adminConfirmFunding, resolveDispute, releaseToSeller, getSellerBankDetails } from "@/services/escrow";
+import { getAllEscrows, adminConfirmFunding, resolveDispute, releaseToSeller, getSellerBankDetails, adminDeleteEscrow } from "@/services/escrow";
 import { getPlatformConfig, type BankDetails } from "@/services/platformSettings";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -117,6 +117,22 @@ export default function AdminEscrowsPage() {
       toast.success("Transfer rejected — buyer notified to re-submit");
     } catch {
       toast.error("Failed to reject transfer");
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const handleDeleteEscrow = async (escrow: EscrowTransaction) => {
+    if (!window.confirm(
+      `Permanently delete this escrow ("${escrow.listingTitle}")? This removes it from the database entirely and cannot be undone.`
+    )) return;
+    setActing(escrow.id);
+    try {
+      await adminDeleteEscrow(escrow.id);
+      setEscrows((prev) => prev.filter((e) => e.id !== escrow.id));
+      toast.success("Escrow permanently deleted");
+    } catch {
+      toast.error("Failed to delete escrow");
     } finally {
       setActing(null);
     }
@@ -513,6 +529,23 @@ export default function AdminEscrowsPage() {
                     {false && (
                       <div className="flex gap-3" />
                     )}
+
+                    {/* Admin: permanent delete — available regardless of status */}
+                    <div className="border-t border-border pt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+                        disabled={acting === e.id}
+                        onClick={(ev) => { ev.stopPropagation(); handleDeleteEscrow(e); }}
+                      >
+                        {acting === e.id
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Trash2 className="w-4 h-4" />
+                        }
+                        Delete Permanently
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
