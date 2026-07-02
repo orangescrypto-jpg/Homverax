@@ -1,8 +1,15 @@
 /**
- * services/offers.ts — backed by Cloudflare D1.
- * Same function signatures as the Firestore version.
+ * services/offers.ts
+ *
+ * ✅ FIX: every function here used to call d1Query()/d1Exec() directly from
+ * client code. Since lib/d1.ts routes browser D1 calls through the
+ * admin/moderator-only proxy at /api/admin/d1, every regular buyer/seller
+ * got a 403 on any offer action or lookup — including getAcceptedOffer,
+ * which runs on the listing detail page load and showed up as "Failed to
+ * load listing" even though the listing itself loaded fine. All functions
+ * below now call the dedicated /api/offers server route, keeping the same
+ * signatures so no call sites need to change.
  */
-import { d1Query, d1Exec, newId } from "@/lib/d1";
 
 export type OfferStatus = "pending" | "accepted" | "rejected" | "countered" | "expired" | "paid";
 
@@ -13,21 +20,27 @@ export interface Offer {
   counterPrice?: number; counterNote?: string; expiresAt?: string; createdAt: string; updatedAt: string;
 }
 
-// Offers stored in platform_settings as JSON keyed by offerId
-async function loadOffer(offerId: string): Promise<Offer | null> {
-  const rows = await d1Query<{ value: string }>(
-    "SELECT value FROM platform_settings WHERE key = ?", [`offer:${offerId}`]
-  );
-  if (!rows.length) return null;
-  try { return JSON.parse(rows[0].value) as Offer; } catch { return null; }
+async function postOffers(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch("/api/offers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error ?? `Offers API error ${res.status}`);
+  }
+  return res.json();
 }
 
-async function saveOffer(offer: Offer): Promise<void> {
-  const now = new Date().toISOString();
-  await d1Exec(
-    "INSERT INTO platform_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-    [`offer:${offer.id}`, JSON.stringify(offer), now]
-  );
+async function getOffers(params: Record<string, string>): Promise<Record<string, unknown>> {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`/api/offers?${qs}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error ?? `Offers API error ${res.status}`);
+  }
+  return res.json();
 }
 
 export async function createOffer(params: {
@@ -35,67 +48,42 @@ export async function createOffer(params: {
   buyerId: string; buyerName: string; sellerId: string; sellerName: string;
   proposedPrice: number; originalPrice: number; note?: string;
 }): Promise<Offer> {
-  const id = newId();
-  const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  const offer: Offer = { ...params, id, status: "pending", expiresAt, createdAt: now, updatedAt: now };
-  await saveOffer(offer);
-  return offer;
+  const { offer } = await postOffers({ action: "create", ...params });
+  return offer as Offer;
 }
 
 export async function acceptOffer(offerId: string): Promise<void> {
-  const offer = await loadOffer(offerId);
-  if (!offer) return;
-  await saveOffer({ ...offer, status: "accepted", updatedAt: new Date().toISOString() });
+  await postOffers({ action: "accept", offerId });
 }
 
 export async function rejectOffer(offerId: string, _reason?: string): Promise<void> {
-  const offer = await loadOffer(offerId);
-  if (!offer) return;
-  await saveOffer({ ...offer, status: "rejected", updatedAt: new Date().toISOString() });
+  await postOffers({ action: "reject", offerId });
 }
 
 export async function counterOffer(offerId: string, counterPrice: number, counterNote?: string): Promise<void> {
-  const offer = await loadOffer(offerId);
-  if (!offer) return;
-  await saveOffer({ ...offer, status: "countered", counterPrice, counterNote: counterNote ?? "", updatedAt: new Date().toISOString() });
+  await postOffers({ action: "counter", offerId, counterPrice, counterNote });
 }
 
 export async function markOfferPaid(offerId: string, _escrowId: string): Promise<void> {
-  const offer = await loadOffer(offerId);
-  if (!offer) return;
-  await saveOffer({ ...offer, status: "paid", updatedAt: new Date().toISOString() });
-}
-
-async function getOffersByQuery(field: string, value: string, status?: OfferStatus): Promise<Offer[]> {
-  const rows = await d1Query<{ key: string; value: string }>(
-    "SELECT key, value FROM platform_settings WHERE key LIKE 'offer:%'", []
-  );
-  const offers: Offer[] = [];
-  for (const row of rows) {
-    try {
-      const o = JSON.parse(row.value) as Offer;
-      const matches = field === "buyerId" ? o.buyerId === value : field === "sellerId" ? o.sellerId === value : o.listingId === value;
-      if (matches && (!status || o.status === status)) offers.push(o);
-    } catch {}
-  }
-  return offers.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  await postOffers({ action: "markPaid", offerId });
 }
 
 export async function getAcceptedOffer(listingId: string, buyerId: string): Promise<Offer | null> {
-  const all = await getOffersByQuery("listingId", listingId, "accepted");
-  return all.find((o) => o.buyerId === buyerId) ?? null;
+  const { offer } = await getOffers({ action: "accepted", listingId, buyerId });
+  return (offer as Offer | null) ?? null;
 }
 
 export async function getPendingOffer(listingId: string, buyerId: string): Promise<Offer | null> {
-  const all = await getOffersByQuery("listingId", listingId, "pending");
-  return all.find((o) => o.buyerId === buyerId) ?? null;
+  const { offer } = await getOffers({ action: "pending", listingId, buyerId });
+  return (offer as Offer | null) ?? null;
 }
 
 export async function getOffersForListing(listingId: string): Promise<Offer[]> {
-  return getOffersByQuery("listingId", listingId);
+  const { offers } = await getOffers({ action: "forListing", listingId });
+  return (offers as Offer[]) ?? [];
 }
 
 export async function getMyOffers(buyerId: string): Promise<Offer[]> {
-  return getOffersByQuery("buyerId", buyerId);
+  const { offers } = await getOffers({ action: "mine", buyerId });
+  return (offers as Offer[]) ?? [];
 }
