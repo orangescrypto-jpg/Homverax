@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import {
   AlertCircle, AlertTriangle, BanknoteIcon,
   CheckCircle2, ChevronLeft, Clock, Copy,
-  ExternalLink, Loader2, Shield,
+  ExternalLink, Loader2, Shield, Upload, FileImage,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,8 @@ export default function EscrowDetailPage() {
   // Transfer proof form
   const [transferRef, setTransferRef] = useState("");
   const [showTransferForm, setShowTransferForm] = useState(false);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
   // Dispute form
   const [disputeReason, setDisputeReason] = useState("");
@@ -101,12 +103,30 @@ export default function EscrowDetailPage() {
       toast.error("Enter your bank transfer reference / teller number");
       return;
     }
+    let receiptUrl: string | undefined;
+    if (receiptFile) {
+      setIsUploadingReceipt(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", receiptFile);
+        formData.append("path", `escrow-receipts/${id}-${Date.now()}-${receiptFile.name}`);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        if (!res.ok) throw new Error("Upload failed");
+        const data = await res.json();
+        receiptUrl = data.url;
+      } catch {
+        toast.error("Failed to upload receipt. Submitting without it — you can email it instead.");
+      } finally {
+        setIsUploadingReceipt(false);
+      }
+    }
     await act(
-      () => submitTransferProof(id, transferRef.trim()),
+      () => submitTransferProof(id, transferRef.trim(), receiptUrl),
       "Transfer submitted! We'll confirm within 1 business hour."
     );
     setShowTransferForm(false);
     setTransferRef("");
+    setReceiptFile(null);
   };
 
   const handleDisputeSubmit = async () => {
@@ -145,7 +165,14 @@ export default function EscrowDetailPage() {
 
   const isBuyer  = escrow.buyerId  === user?.id;
   const isSeller = escrow.sellerId === user?.id;
-  const totalPayable = escrow.amount + escrow.platformFee;
+  // ✅ FIX: was escrow.amount + escrow.platformFee — platformFee is the
+  // SELLER's platform cut, deducted from what the seller receives, not
+  // something the buyer pays on top. The buyer only ever pays
+  // amount + buyerServiceCharge (their own, separate fee — e.g. shown as
+  // "Escrow fee (0%)" in the Confirm Payment modal). Using platformFee
+  // here meant the transfer instructions showed a nonzero amount even
+  // when admin had set the buyer service charge to 0%.
+  const totalPayable = escrow.amount + escrow.buyerServiceCharge;
 
   // Stepper — include awaiting_confirmation in the visual steps
   const DISPLAY_STEPS = ESCROW_STEPS.filter((s) =>
@@ -179,7 +206,7 @@ export default function EscrowDetailPage() {
                 {formatCurrency(escrow.amount)}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                + {formatCurrency(escrow.platformFee)} ({platformFee}% fee)
+                + {formatCurrency(escrow.buyerServiceCharge)} ({platformFee}% fee)
               </p>
               <span className={cn(
                 "inline-block mt-2 text-xs font-semibold px-2.5 py-1 rounded-lg border capitalize",
@@ -290,7 +317,7 @@ export default function EscrowDetailPage() {
                     {formatCurrency(totalPayable)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Includes {platformFee}% HomveraX escrow fee ({formatCurrency(escrow.platformFee)})
+                    Includes {platformFee}% HomveraX escrow fee ({formatCurrency(escrow.buyerServiceCharge)})
                   </p>
                 </div>
 
@@ -365,21 +392,49 @@ export default function EscrowDetailPage() {
                       onChange={(e) => setTransferRef(e.target.value)}
                       className="text-sm"
                     />
+                    <div>
+                      <Label htmlFor="receipt-upload" className="text-sm font-medium text-foreground mb-1.5 block">
+                        Payment receipt / screenshot <span className="text-muted-foreground font-normal">(optional, recommended)</span>
+                      </Label>
+                      <label
+                        htmlFor="receipt-upload"
+                        className="flex items-center gap-2 border border-dashed border-border rounded-xl px-3 py-2.5 text-sm cursor-pointer hover:bg-secondary/50 transition-colors"
+                      >
+                        {receiptFile ? (
+                          <>
+                            <FileImage className="w-4 h-4 text-primary shrink-0" />
+                            <span className="truncate text-foreground">{receiptFile.name}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">Attach a photo or screenshot of your receipt</span>
+                          </>
+                        )}
+                      </label>
+                      <input
+                        id="receipt-upload"
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         className="flex-1 gap-2"
-                        disabled={isActing || !transferRef.trim()}
+                        disabled={isActing || isUploadingReceipt || !transferRef.trim()}
                         onClick={handleSubmitTransfer}
                       >
-                        {isActing
+                        {(isActing || isUploadingReceipt)
                           ? <Loader2 className="w-4 h-4 animate-spin" />
                           : <CheckCircle2 className="w-4 h-4" />
                         }
-                        Submit Transfer
+                        {isUploadingReceipt ? "Uploading receipt…" : "Submit Transfer"}
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => { setShowTransferForm(false); setTransferRef(""); }}
+                        onClick={() => { setShowTransferForm(false); setTransferRef(""); setReceiptFile(null); }}
                       >
                         Cancel
                       </Button>
@@ -412,6 +467,17 @@ export default function EscrowDetailPage() {
                       {(escrow as any).transferReference}
                     </span>
                   </div>
+                )}
+                {(escrow as any).receiptUrl && (
+                  <a
+                    href={(escrow as any).receiptUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 flex items-center gap-2 bg-white/60 dark:bg-white/5 rounded-xl px-4 py-3 text-sm text-blue-700 dark:text-blue-400 hover:underline"
+                  >
+                    <FileImage className="w-4 h-4 shrink-0" />
+                    View uploaded receipt
+                  </a>
                 )}
                 <p className="text-xs text-blue-600 dark:text-blue-300 mt-3">
                   Questions? Email <a href="mailto:escrow@homverax.com" className="underline">escrow@homverax.com</a> with your reference number.
