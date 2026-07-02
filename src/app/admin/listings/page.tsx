@@ -79,6 +79,19 @@ export default function AdminListingsPage() {
     finally { setActing(null); }
   };
 
+  // ✅ FIX: there was no way anywhere in the app (admin or user side) to
+  // remove an active boost once set — a real missing feature, not just a
+  // hidden one. Boosts are paid/admin-approved, so removal belongs here.
+  const handleRemoveBoost = async (listing: PropertyListing) => {
+    setActing(listing.id);
+    try {
+      await updateListing(listing.id, { boostType: "none" } as any);
+      setListings((prev) => prev.map((l) => l.id === listing.id ? { ...l, boostType: "none" } : l));
+      toast.success("Boost removed");
+    } catch { toast.error("Failed to remove boost"); }
+    finally { setActing(null); }
+  };
+
   const counts = {
     all: listings.length,
     active: listings.filter((l) => l.status === "active").length,
@@ -162,6 +175,18 @@ export default function AdminListingsPage() {
                 </span>
 
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {l.boostType && l.boostType !== "none" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-accent"
+                      title={`Remove ${l.boostType.replace("_", " ")} boost`}
+                      disabled={acting === l.id}
+                      onClick={() => handleRemoveBoost(l)}
+                    >
+                      {acting === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                    </Button>
+                  )}
                   <Link href={`/listings/${l.id}`} target="_blank">
                     <Button variant="ghost" size="icon" className="h-8 w-8">
                       <Eye className="w-3.5 h-3.5" />
