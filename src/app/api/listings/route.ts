@@ -30,6 +30,78 @@ import { LISTING_SELECT, rowToListing, type ListingRow } from "@/services/listin
 // here; upgrading to Pro allows higher ceilings if still not enough.
 export const maxDuration = 60;
 
+// ✅ FIX: searchListings() (used by the main /listings browse page and the
+// homepage) called d1Query() directly from the client. After lib/d1.ts
+// started routing browser D1 calls through the admin/moderator-only
+// proxy, this meant EVERY regular visitor — anyone not logged in as
+// staff — got silently blocked from browsing listings at all. Browsing
+// must never require authentication. This GET handler is fully public.
+export async function GET(request: NextRequest) {
+  const sp = request.nextUrl.searchParams;
+  const pageLimit = Math.min(Number(sp.get("limit")) || 12, 50);
+
+  const conditions: string[] = ["l.status = 'active'"];
+  const params: unknown[] = [];
+
+  const category = sp.get("category");
+  const state = sp.get("state");
+  const propertyType = sp.get("propertyType");
+  const listingType = sp.get("listingType");
+  const verifiedOnly = sp.get("verifiedOnly");
+  const furnished = sp.get("furnished");
+  const minPrice = sp.get("minPrice");
+  const maxPrice = sp.get("maxPrice");
+  const bedrooms = sp.get("bedrooms");
+  const query = sp.get("query");
+
+  if (category)     { conditions.push("l.category = ?");      params.push(category); }
+  if (state)        { conditions.push("l.state = ?");          params.push(state); }
+  if (propertyType) { conditions.push("l.property_type = ?");  params.push(propertyType); }
+  if (listingType)  { conditions.push("l.listing_type = ?");   params.push(listingType); }
+  if (verifiedOnly === "true") { conditions.push("l.is_property_verified = 1"); }
+  if (furnished !== null) { conditions.push("l.furnished = ?"); params.push(furnished === "true" ? 1 : 0); }
+  if (minPrice) { conditions.push("l.price >= ?"); params.push(Number(minPrice)); }
+  if (maxPrice) { conditions.push("l.price <= ?"); params.push(Number(maxPrice)); }
+  if (bedrooms)  { conditions.push("l.bedrooms >= ?"); params.push(Number(bedrooms)); }
+  if (query) {
+    const q = `%${query}%`;
+    conditions.push("(l.title LIKE ? OR l.description LIKE ? OR l.address LIKE ? OR l.state LIKE ?)");
+    params.push(q, q, q, q);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const fetchLimit = (pageLimit + 1) * 3;
+  params.push(fetchLimit);
+
+  const rows = await d1Query<ListingRow>(
+    `SELECT ${LISTING_SELECT} ${where} ORDER BY l.created_at DESC LIMIT ?`,
+    params
+  );
+
+  let items = rows.map(rowToListing);
+
+  const getScore = (l: any): number => {
+    let score = 0;
+    if (l.boostType === "top_placement") score += 1000;
+    if (l.boostType === "featured")      score += 500;
+    if (l.boostType === "urgent")        score += 50;
+    score += (l.agentRankBoost ?? 0) * 100;
+    return score;
+  };
+  items.sort((a, b) => getScore(b) - getScore(a));
+
+  const hasMore = items.length > pageLimit;
+  const page = Number(sp.get("page")) || 0;
+
+  return NextResponse.json({
+    data: items.slice(0, pageLimit),
+    total: items.length,
+    page,
+    limit: pageLimit,
+    totalPages: hasMore ? page + 2 : page + 1,
+  });
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
