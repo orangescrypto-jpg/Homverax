@@ -29,7 +29,7 @@ import { toast } from "sonner";
 import type { PropertyListing } from "@/types";
 import { getPlatformConfig } from "@/services/platformSettings";
 import { getAcceptedOffer, markOfferPaid } from "@/services/offers";
-import { initiateEscrow } from "@/services/escrow";
+import { initiateEscrow, DuplicateEscrowError } from "@/services/escrow";
 import { useSearchParams } from "next/navigation";
 import type { Offer } from "@/services/offers";
 
@@ -219,7 +219,13 @@ export default function ListingDetailClient({ id }: { id: string }) {
       setShowBuyModal(false);
       toast.success("Escrow initiated! Complete payment to secure the deal.");
       router.push(`/dashboard/escrow/${escrow.id}`);
-    } catch {
+    } catch (err) {
+      if (err instanceof DuplicateEscrowError) {
+        setShowBuyModal(false);
+        toast.info("You already have an order in progress for this listing — taking you there now.");
+        router.push(`/dashboard/escrow/${err.escrow.id}`);
+        return;
+      }
       toast.error("Failed to initiate escrow. Please try again.");
     } finally {
       setIsInitiatingEscrow(false);
