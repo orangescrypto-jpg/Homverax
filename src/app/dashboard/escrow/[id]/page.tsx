@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   getEscrowById, submitTransferProof,
   holdEscrow, startInspection,
-  confirmDelivery, openDispute,
+  confirmDelivery, openDispute, cancelEscrow,
 } from "@/services/escrow";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency, timeAgo } from "@/lib/utils";
@@ -51,6 +51,7 @@ export default function EscrowDetailPage() {
   const [escrow, setEscrow] = useState<EscrowTransaction | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActing, setIsActing] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [bank, setBank] = useState<BankDetails>({
     bankName: "—", accountNumber: "—", accountName: "—", sortCode: "—",
   });
@@ -127,6 +128,20 @@ export default function EscrowDetailPage() {
     setShowTransferForm(false);
     setTransferRef("");
     setReceiptFile(null);
+  };
+
+  const handleCancelOrder = async () => {
+    if (!window.confirm("Cancel this order? It will be deleted permanently — you can start a new order for this listing right after.")) return;
+    setIsCancelling(true);
+    try {
+      await cancelEscrow(id);
+      toast.success("Order cancelled");
+      router.push("/dashboard/escrow");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel order");
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   const handleDisputeSubmit = async () => {
@@ -371,13 +386,27 @@ export default function EscrowDetailPage() {
 
                 {/* Confirm transfer button */}
                 {!showTransferForm ? (
-                  <Button
-                    className="w-full gap-2"
-                    onClick={() => setShowTransferForm(true)}
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    I've Made the Transfer
-                  </Button>
+                  <div className="space-y-2">
+                    <Button
+                      className="w-full gap-2"
+                      onClick={() => setShowTransferForm(true)}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      I've Made the Transfer
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+                      disabled={isCancelling}
+                      onClick={handleCancelOrder}
+                    >
+                      {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Cancel Order
+                    </Button>
+                    <p className="text-xs text-muted-foreground text-center">
+                      Unpaid orders are automatically deleted after 24 hours.
+                    </p>
+                  </div>
                 ) : (
                   <div className="space-y-3 bg-secondary/50 p-4 rounded-xl">
                     <p className="text-sm font-medium text-foreground">
