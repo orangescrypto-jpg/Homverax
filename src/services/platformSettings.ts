@@ -530,19 +530,26 @@ export function invalidateConfigCache() {
   _cacheErrorCount = 0;
 }
 
+// ✅ FIX: was reading "current" via getPlatformConfig() (which can
+// silently fall back to DEFAULT_CONFIG on any failure) then merging and
+// writing client-side. If the read failed at the wrong moment, a save
+// would wipe out every other previously-customized setting — this looked
+// like settings randomly "resetting after some time." Now the whole
+// read-merge-write happens atomically server-side.
 export async function savePlatformConfig(
   config: Partial<PlatformConfig>,
   adminId: string,
   adminName: string,
 ): Promise<void> {
-  const current = await getPlatformConfig();
-  const merged = { ...current, ...config };
-  const now = new Date().toISOString();
-  await d1Exec(
-    `INSERT INTO platform_settings (key, value, updated_at) VALUES ('config', ?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    [JSON.stringify({ ...merged, _updatedBy: `${adminName} (${adminId})` }), now]
-  );
+  const res = await fetch("/api/admin/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to save settings");
+  }
   invalidateConfigCache();
 }
 
