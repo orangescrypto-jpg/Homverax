@@ -271,39 +271,39 @@ export async function deleteListing(id: string): Promise<void> {
 }
 
 // ─── Save / unsave listing ────────────────────────────────────────────────────
+// ✅ FIX: these used to call d1Exec/d1Query directly from client code, which
+// goes through the admin/moderator-only /api/admin/d1 proxy and 403s for
+// regular signed-in users (isListingSaved runs on every listing detail page
+// load, so this showed up as "Failed to load listing"). Now routed through
+// the dedicated /api/listings/saved server route.
 export async function saveListing(userId: string, listingId: string): Promise<void> {
-  const id = `${userId}_${listingId}`;
-  const now = new Date().toISOString();
-  await d1Exec(
-    "INSERT OR IGNORE INTO saved_listings (id, user_id, listing_id, created_at) VALUES (?, ?, ?, ?)",
-    [id, userId, listingId, now]
-  );
-  await d1Exec("UPDATE listings SET saves = saves + 1 WHERE id = ?", [listingId]);
+  await fetch("/api/listings/saved", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, listingId, action: "save" }),
+  });
 }
 
 export async function unsaveListing(userId: string, listingId: string): Promise<void> {
-  const id = `${userId}_${listingId}`;
-  await d1Exec("DELETE FROM saved_listings WHERE id = ?", [id]);
-  await d1Exec("UPDATE listings SET saves = MAX(0, saves - 1) WHERE id = ?", [listingId]);
+  await fetch("/api/listings/saved", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, listingId, action: "unsave" }),
+  });
 }
 
 export async function isListingSaved(userId: string, listingId: string): Promise<boolean> {
-  const rows = await d1Query<{ id: string }>(
-    "SELECT id FROM saved_listings WHERE id = ?",
-    [`${userId}_${listingId}`]
-  );
-  return rows.length > 0;
+  const res = await fetch(`/api/listings/saved?userId=${encodeURIComponent(userId)}&listingId=${encodeURIComponent(listingId)}`);
+  if (!res.ok) return false;
+  const { saved } = await res.json();
+  return !!saved;
 }
 
 export async function getSavedListings(userId: string): Promise<PropertyListing[]> {
-  const rows = await d1Query<ListingRow>(
-    `SELECT ${LISTING_SELECT}
-     INNER JOIN saved_listings sl ON sl.listing_id = l.id
-     WHERE sl.user_id = ?
-     ORDER BY sl.created_at DESC`,
-    [userId]
-  );
-  return rows.map(rowToListing);
+  const res = await fetch(`/api/listings/saved?userId=${encodeURIComponent(userId)}`);
+  if (!res.ok) return [];
+  const { listings } = await res.json();
+  return (listings ?? []) as PropertyListing[];
 }
 
 // ─── Apply boost ──────────────────────────────────────────────────────────────
