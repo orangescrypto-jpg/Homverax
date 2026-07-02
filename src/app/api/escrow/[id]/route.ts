@@ -1,0 +1,125 @@
+/**
+ * app/api/escrow/[id]/route.ts
+ * GET    /api/escrow/[id]        — fetch a single escrow transaction
+ * PATCH  /api/escrow/[id]        — update escrow status / meta (buyer or seller actions)
+ *
+ * ✅ FIX: getEscrowById()/updateEscrowStatus() in services/escrow.ts used to
+ * call d1Query()/d1Exec() directly from the client. Since lib/d1.ts routes
+ * browser D1 calls through the admin/moderator-only proxy at /api/admin/d1,
+ * this meant any regular buyer or seller opening their own escrow page (or
+ * clicking "I've sent the transfer", "Confirm delivery", etc) got a silent
+ * 403 — surfaced as "Transaction not found" / "Failed to load escrow" /
+ * "Action failed. Please try again." This route does the same DB work
+ * server-side, gated only to "signed in and is the buyer or seller on this
+ * escrow", not "is staff".
+ */
+import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { d1Query, d1Exec } from "@/lib/d1";
+import type { EscrowTransaction, EscrowStatus } from "@/types";
+
+interface EscrowRow {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount: number;
+  status: string;
+  release_at: string | null;
+  created_at: string;
+  updated_at: string;
+  meta: string | null;
+}
+
+function rowToEscrow(row: EscrowRow, userId?: string): EscrowTransaction {
+  let meta: Record<string, unknown> = {};
+  try { meta = JSON.parse(row.meta || "{}"); } catch {}
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    listingTitle: (meta.listingTitle as string) ?? "",
+    listingImage: (meta.listingImage as string) ?? "",
+    listingPrice: (meta.listingPrice as number) ?? row.amount,
+    listingLocation: (meta.listingLocation as string) ?? "",
+    listingType: ((meta.listingType as string) ?? "sale") as EscrowTransaction["listingType"],
+    buyerId: row.buyer_id,
+    sellerId: row.seller_id,
+    amount: row.amount,
+    buyerServiceCharge: (meta.buyerServiceCharge as number) ?? 0,
+    buyerServiceChargePercent: (meta.buyerServiceChargePercent as number) ?? 0,
+    buyerServiceChargeLabel: (meta.buyerServiceChargeLabel as string) ?? "Service Charge",
+    buyerTotal: (meta.buyerTotal as number) ?? row.amount,
+    platformFee: (meta.platformFee as number) ?? 0,
+    platformFeePercent: (meta.platformFeePercent as number) ?? 0,
+    sellerReceives: (meta.sellerReceives as number) ?? row.amount,
+    status: row.status as EscrowStatus,
+    role: userId === row.buyer_id ? "buyer" : "seller",
+    paymentReference: (meta.paymentReference as string) ?? undefined,
+    depositPaidAt: (meta.depositPaidAt as string) ?? undefined,
+    fundsHeldAt: (meta.fundsHeldAt as string) ?? undefined,
+    inspectionDate: (meta.inspectionDate as string) ?? undefined,
+    releasedAt: (meta.releasedAt as string) ?? undefined,
+    disputeReason: (meta.disputeReason as string) ?? undefined,
+    disputeOpenedAt: (meta.disputeOpenedAt as string) ?? undefined,
+    resolvedAt: (meta.resolvedAt as string) ?? undefined,
+    notes: (meta.notes as string) ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function requireParty(id: string) {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return { error: "Unauthorized" as const, status: 401 as const };
+
+  const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
+  if (!rows.length) return { error: "Not found" as const, status: 404 as const };
+
+  const row = rows[0];
+  if (row.buyer_id !== user.id && row.seller_id !== user.id) {
+    return { error: "Forbidden" as const, status: 403 as const };
+  }
+  return { row, userId: user.id };
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const result = await requireParty(id);
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+  return NextResponse.json({ escrow: rowToEscrow(result.row, result.userId) });
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const result = await requireParty(id);
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body?.status) {
+    return NextResponse.json({ error: "Missing status" }, { status: 400 });
+  }
+
+  const now = new Date().toISOString();
+  await d1Exec("UPDATE escrows SET status = ?, updated_at = ? WHERE id = ?", [body.status, now, id]);
+
+  if (body.extra && typeof body.extra === "object") {
+    let meta: Record<string, unknown> = {};
+    try { meta = JSON.parse(result.row.meta || "{}"); } catch {}
+    const merged = { ...meta, ...body.extra };
+    await d1Exec("UPDATE escrows SET meta = ?, updated_at = ? WHERE id = ?", [JSON.stringify(merged), now, id]);
+  }
+
+  const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
+  return NextResponse.json({ escrow: rowToEscrow(rows[0], result.userId) });
+}
