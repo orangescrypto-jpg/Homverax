@@ -225,6 +225,7 @@ export interface ListingBoostOption {
   description: string;
   price: number;
   icon: string;
+  durationDays: number; // ✅ FIX: boosts had no configurable duration at all
 }
 
 // ─── Verification ─────────────────────────────────────────────────────────────
