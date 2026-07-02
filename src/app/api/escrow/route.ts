@@ -15,7 +15,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { d1Query, d1Exec, newId } from "@/lib/d1";
 import {
-  getPlatformConfig,
+  loadPlatformConfigFromDb,
   calcBuyerServiceCharge,
   calcSellerPlatformFee,
 } from "@/services/platformSettings";
@@ -88,7 +88,13 @@ export async function POST(request: NextRequest) {
   // ✅ Always use the authenticated user's id as buyer, never a client-supplied one.
   const buyerId = user.id;
 
-  const cfg = await getPlatformConfig();
+  // ✅ FIX: getPlatformConfig() does a relative fetch("/api/config"), which
+  // has no base URL when called from server-side code (this route), so it
+  // silently failed and fell back to DEFAULT_CONFIG (1% buyer fee) — this
+  // is why an escrow was created with a 1%/₦2,500 fee even after admin set
+  // it to 0%. loadPlatformConfigFromDb() reads the real saved config
+  // directly, which is what server-side code should use.
+  const cfg = await loadPlatformConfigFromDb();
   const { serviceCharge, total } = calcBuyerServiceCharge(body.amount, cfg.escrowFees);
   const { platformFee, sellerReceives, feePercent } = calcSellerPlatformFee(
     body.amount,
