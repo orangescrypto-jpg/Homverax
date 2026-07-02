@@ -130,7 +130,7 @@ export default function EscrowBookingPage() {
             <div className="text-right shrink-0">
               <p className="text-2xl font-serif font-bold text-primary">{formatCurrency(escrow.amount)}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                + {formatCurrency(escrow.platformFee)} ({PLATFORM_FEE_PERCENT}% fee)
+                + {formatCurrency(escrow.buyerServiceCharge)} ({escrow.buyerServiceChargePercent}% fee)
               </p>
             </div>
           </div>
