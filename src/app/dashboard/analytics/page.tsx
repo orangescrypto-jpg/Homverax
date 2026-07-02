@@ -80,8 +80,9 @@ export default function ListingAnalyticsPage() {
       </div>
 
       {/* Overall stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
         {[
+          { label: "Listings", value: listings.length, icon: BarChart2, color: "text-primary" },
           { label: "Total Views", value: totalViews, icon: Eye, color: "text-blue-600" },
           { label: "Total Saves", value: totalSaves, icon: Heart, color: "text-red-500" },
           { label: "Inquiries", value: totalInquiries, icon: MessageSquare, color: "text-green-600" },
