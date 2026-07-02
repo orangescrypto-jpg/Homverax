@@ -53,11 +53,22 @@ export async function GET(request: NextRequest) {
   const maxPrice = sp.get("maxPrice");
   const bedrooms = sp.get("bedrooms");
   const query = sp.get("query");
+  const boostType = sp.get("boostType");
 
   if (category)     { conditions.push("l.category = ?");      params.push(category); }
   if (state)        { conditions.push("l.state = ?");          params.push(state); }
   if (propertyType) { conditions.push("l.property_type = ?");  params.push(propertyType); }
   if (listingType)  { conditions.push("l.listing_type = ?");   params.push(listingType); }
+  // ✅ FIX: boostType was accepted by the client (searchListings) but never
+  // forwarded to this route, so a "featured only" request (e.g. the
+  // homepage's Featured Properties section) silently ignored the filter
+  // and returned the newest listings regardless of boost status. That's
+  // why an unboosted listing (admin star shown empty/outlined = "none")
+  // could still appear under "Featured" on the homepage.
+  if (boostType) {
+    conditions.push("l.boost_type = ? AND (l.boost_expires_at IS NULL OR l.boost_expires_at > ?)");
+    params.push(boostType, new Date().toISOString());
+  }
   if (verifiedOnly === "true") { conditions.push("l.is_property_verified = 1"); }
   if (furnished !== null) { conditions.push("l.furnished = ?"); params.push(furnished === "true" ? 1 : 0); }
   if (minPrice) { conditions.push("l.price >= ?"); params.push(Number(minPrice)); }
