@@ -79,6 +79,9 @@ export interface PropertyListing {
   boostExpiresAt?: string; // ✅ FIX: previously untracked — boosts never expired
   isPropertyVerified: boolean;
   isFeatured: boolean;
+  isFlashDeal: boolean;
+  flashDealPrice?: number;
+  flashDealExpiresAt?: string;
   status: ListingStatus;
   viewsCount: number;
   inquiriesCount: number;
