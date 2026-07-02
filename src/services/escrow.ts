@@ -95,6 +95,11 @@ export async function getEscrowFeeBreakdown(
   };
 }
 
+// ✅ FIX: was calling d1Query()/d1Exec() directly from the client, which —
+// via the admin/moderator-only proxy in lib/d1.ts — silently blocked every
+// regular buyer from starting an escrow transaction, surfacing only as
+// "Failed to initiate escrow. Please try again." Now calls a public,
+// any-signed-in-user route that does the DB write server-side.
 export async function initiateEscrow(params: {
   listingId: string;
   listingTitle: string;
@@ -106,34 +111,19 @@ export async function initiateEscrow(params: {
   sellerId: string;
   amount: number;
 }): Promise<EscrowTransaction> {
-  const cfg = await getPlatformConfig();
-  const { serviceCharge, total } = calcBuyerServiceCharge(params.amount, cfg.escrowFees);
-  const { platformFee, sellerReceives, feePercent } = calcSellerPlatformFee(params.amount, params.listingType, cfg.escrowFees);
-
-  const id = newId();
-  const now = new Date().toISOString();
-  const meta = JSON.stringify({
-    listingTitle: params.listingTitle,
-    listingImage: params.listingImage,
-    listingPrice: params.listingPrice,
-    listingLocation: params.listingLocation,
-    listingType: params.listingType,
-    buyerServiceCharge: serviceCharge,
-    buyerServiceChargePercent: cfg.escrowFees.buyerServiceChargePercent,
-    buyerServiceChargeLabel: cfg.escrowFees.buyerServiceChargeLabel,
-    buyerTotal: total,
-    platformFee,
-    platformFeePercent: feePercent,
-    sellerReceives,
+  const res = await fetch("/api/escrow", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
   });
 
-  await d1Exec(
-    "INSERT INTO escrows (id, listing_id, buyer_id, seller_id, amount, status, meta, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-    [id, params.listingId, params.buyerId, params.sellerId, params.amount, "pending", meta, now, now]
-  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to initiate escrow");
+  }
 
-  const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
-  return rowToEscrow(rows[0], params.buyerId);
+  const { escrow } = await res.json();
+  return escrow as EscrowTransaction;
 }
 
 export async function getEscrowById(id: string): Promise<EscrowTransaction | null> {
