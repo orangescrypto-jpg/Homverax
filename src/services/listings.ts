@@ -18,6 +18,14 @@ export function isBoostExpired(boostType: string | null, boostExpiresAt: string 
   return new Date(boostExpiresAt).getTime() < Date.now();
 }
 
+// ✅ FIX: flash deal expiry check, mirroring isBoostExpired — a flash deal
+// with a past flash_deal_expires_at is treated as inactive everywhere.
+export function isFlashDealExpired(isFlashDeal: number | boolean, flashDealExpiresAt: string | null): boolean {
+  if (!isFlashDeal) return true;
+  if (!flashDealExpiresAt) return true;
+  return new Date(flashDealExpiresAt).getTime() < Date.now();
+}
+
 
 // ─── Row from D1 listings table ───────────────────────────────────────────────
 // Exported so server-only API routes (e.g. /api/admin/listings) can reuse the
@@ -115,6 +123,14 @@ export function rowToListing(row: ListingRow): PropertyListing {
     boostExpiresAt: row.boost_expires_at ?? undefined,
     isPropertyVerified: row.is_property_verified === 1,
     isFeatured: row.is_featured === 1,
+    // ✅ FIX: is_flash_deal/flash_deal_price/flash_deal_expires_at existed on
+    // the D1 row but were never mapped onto PropertyListing, so flash deals
+    // never appeared anywhere except the dedicated /flash-deals page (which
+    // reads them via a separate route). Also treat an expired flash deal as
+    // inactive at read time, same pattern as isBoostExpired above.
+    isFlashDeal: !isFlashDealExpired(row.is_flash_deal, row.flash_deal_expires_at),
+    flashDealPrice: row.flash_deal_price ?? undefined,
+    flashDealExpiresAt: row.flash_deal_expires_at ?? undefined,
     status: (row.status as PropertyListing["status"]) ?? "active",
     viewsCount: row.views ?? 0,
     inquiriesCount: 0,
