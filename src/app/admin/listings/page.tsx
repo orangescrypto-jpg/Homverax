@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Building2, CheckCircle2, Eye, Loader2, Pause, Play, Search, Trash2, X } from "lucide-react";
+import { Building2, CheckCircle2, Edit2, Eye, Loader2, Pause, Play, Search, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,7 +151,11 @@ export default function AdminListingsPage() {
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="divide-y divide-border">
             {filtered.map((l) => (
-              <div key={l.id} className="flex items-center gap-4 px-5 py-4 hover:bg-secondary/30 transition-colors">
+              // ✅ FIX: was a single rigid flex row that squeezed image,
+              // title, status badge, and 3-4 action icons onto one line —
+              // fine on desktop, cramped/cut-off on mobile. Now wraps into
+              // two rows on small screens (info row, then actions row).
+              <div key={l.id} className="flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 hover:bg-secondary/30 transition-colors">
                 <div className="relative w-14 h-11 rounded-lg overflow-hidden shrink-0">
                   <Image
                     src={l.images?.[0] ?? PLACEHOLDER}
@@ -162,7 +166,7 @@ export default function AdminListingsPage() {
                   />
                 </div>
 
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-[140px]">
                   <p className="text-sm font-semibold text-foreground truncate">{l.title}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {l.location?.lga}, {l.location?.state} · {formatPriceLabel(l.price, l.priceUnit)}
@@ -174,7 +178,7 @@ export default function AdminListingsPage() {
                   {l.status}
                 </span>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 flex-wrap justify-end w-full sm:w-auto">
                   {l.boostType && l.boostType !== "none" && (
                     <Button
                       variant="ghost"
@@ -190,6 +194,14 @@ export default function AdminListingsPage() {
                   <Link href={`/listings/${l.id}`} target="_blank">
                     <Button variant="ghost" size="icon" className="h-8 w-8">
                       <Eye className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                  {/* ✅ FIX: Edit was completely missing from THIS page —
+                      the one actually live and titled "Manage Listings".
+                      Links to the same edit page agents use. */}
+                  <Link href={`/dashboard/listings/edit/${l.id}`}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit listing">
+                      <Edit2 className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                   <Button
