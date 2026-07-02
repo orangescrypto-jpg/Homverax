@@ -75,7 +75,13 @@ export default function ListingDetailClient({ id }: { id: string }) {
           getPlatformConfig(),
         ]);
         setListing(data);
-        setPlatformFeePercent(cfg.platformFeePercent);
+        // ✅ FIX: `cfg.platformFeePercent` doesn't exist on PlatformConfig —
+        // it's always undefined, so this silently kept the hardcoded
+        // useState(1.5) default forever. The buyer-facing checkout fee
+        // should come from cfg.escrowFees.buyerServiceChargePercent, which
+        // is what admins actually control in Settings (separate from the
+        // seller-side fees the seller sees while listing).
+        setPlatformFeePercent(cfg.escrowFees?.buyerServiceChargePercent ?? 1.0);
         if (isAuthenticated && user && data) {
           const saved = await isListingSaved(user.id, data.id);
           setIsSaved(saved);
