@@ -562,6 +562,22 @@ export default function ListingDetailClient({ id }: { id: string }) {
               )}
             </div>
 
+            {/* ✅ FIX: Safety Tip moved to appear right after the action
+                buttons (Buy Now / Request Viewing / Message), instead of
+                after Listing stats — it's more relevant right where the
+                person is about to act on payment. */}
+            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-2xl p-4">
+              <div className="flex items-start gap-2">
+                <Shield className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-1">Safety Tip</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300/80">
+                    Always use HomveraX escrow for payments. Never pay directly before verifying the property.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Stats */}
             <div className="bg-card border border-border rounded-2xl p-5">
               <h3 className="font-semibold text-foreground mb-3 text-sm">Listing stats</h3>
@@ -577,19 +593,6 @@ export default function ListingDetailClient({ id }: { id: string }) {
                 <div>
                   <p className="text-lg font-bold text-foreground">{listing.savedCount}</p>
                   <p className="text-xs text-muted-foreground">Saved</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Safety tip */}
-            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-2xl p-4">
-              <div className="flex items-start gap-2">
-                <Shield className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-1">Safety Tip</p>
-                  <p className="text-xs text-amber-700 dark:text-amber-300/80">
-                    Always use HomveraX escrow for payments. Never pay directly before verifying the property.
-                  </p>
                 </div>
               </div>
             </div>
