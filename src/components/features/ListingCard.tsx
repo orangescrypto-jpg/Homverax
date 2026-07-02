@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Bath, Bed, Building2, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2 } from "lucide-react";
+import { Bath, Bed, Building2, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield } from "lucide-react";
 import { cn, formatPriceLabel } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -130,6 +130,14 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
         <p className="mt-2 text-lg font-bold text-primary font-serif">
           {priceLabel}
         </p>
+
+        {/* ✅ Escrow Protected badge — shown directly on the card, before
+            the listing is even opened, so buyers see the trust signal
+            immediately while browsing (not just after clicking in). */}
+        <div className="mt-2 flex items-center gap-1.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/40 rounded-lg px-2.5 py-1.5">
+          <Shield className="w-3.5 h-3.5 text-green-600 shrink-0" />
+          <span className="text-xs font-medium text-green-700 dark:text-green-400">Escrow Protected</span>
+        </div>
 
         {/* Property specs */}
         {(listing.bedrooms !== undefined || listing.bathrooms !== undefined) && (
