@@ -76,6 +76,7 @@ export interface PropertyListing {
   videoUrl?: string;
   virtualTourUrl?: string;     // YouTube / Matterport / 360° link
   boostType: ListingBoostType;
+  boostExpiresAt?: string; // ✅ FIX: previously untracked — boosts never expired
   isPropertyVerified: boolean;
   isFeatured: boolean;
   status: ListingStatus;
