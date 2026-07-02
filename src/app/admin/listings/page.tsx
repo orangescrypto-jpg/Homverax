@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Building2, CheckCircle2, Edit2, Eye, Loader2, Pause, Play, Search, Trash2, X } from "lucide-react";
+import { Building2, CheckCircle2, Edit2, Eye, Flame, Loader2, Pause, Play, Rocket, Search, Star, Trash2, X } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +92,21 @@ export default function AdminListingsPage() {
       setListings((prev) => prev.map((l) => l.id === listing.id ? { ...l, boostType: "none" } : l));
       toast.success("Boost removed");
     } catch { toast.error("Failed to remove boost"); }
+    finally { setActing(null); }
+  };
+
+  // ✅ FIX: admin had no way to directly boost a listing without going
+  // through the paid user-submission-then-approval flow. Admins should be
+  // able to just apply a boost outright.
+  const handleQuickBoost = async (listing: PropertyListing, boostType: "featured" | "top_placement" | "urgent") => {
+    setActing(listing.id);
+    try {
+      const durationDays = boostType === "urgent" ? 14 : 7;
+      const boostExpiresAt = new Date(Date.now() + durationDays * 86400000).toISOString();
+      await updateListing(listing.id, { boostType, boostExpiresAt } as any);
+      setListings((prev) => prev.map((l) => l.id === listing.id ? { ...l, boostType, boostExpiresAt } : l));
+      toast.success(`Listing boosted (${boostType.replace("_", " ")}, ${durationDays}d)`);
+    } catch { toast.error("Failed to apply boost"); }
     finally { setActing(null); }
   };
 
@@ -179,6 +197,26 @@ export default function AdminListingsPage() {
                 </span>
 
                 <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 flex-wrap justify-end w-full sm:w-auto">
+                  {(!l.boostType || l.boostType === "none") && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-accent" title="Boost listing" disabled={acting === l.id}>
+                          {acting === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Star className="w-3.5 h-3.5" />}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleQuickBoost(l, "featured")}>
+                          <Star className="mr-2 h-4 w-4" /> Featured (7d)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleQuickBoost(l, "top_placement")}>
+                          <Rocket className="mr-2 h-4 w-4" /> Top of Search (7d)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleQuickBoost(l, "urgent")}>
+                          <Flame className="mr-2 h-4 w-4" /> Urgent Badge (14d)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   {l.boostType && l.boostType !== "none" && (
                     <Button
                       variant="ghost"
