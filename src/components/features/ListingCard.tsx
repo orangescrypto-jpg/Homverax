@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bath, Bed, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield } from "lucide-react";
-import { cn, formatPriceLabel } from "@/lib/utils";
+import { Bath, Bed, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield, Zap } from "lucide-react";
+import { cn, formatPriceLabel, formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPlatformConfig } from "@/services/platformSettings";
@@ -103,6 +103,21 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
             </div>
           )}
 
+          {/* ✅ FIX: flash deal data (is_flash_deal/flash_deal_price/
+              flash_deal_expires_at) reached PropertyListing via rowToListing
+              but was never rendered anywhere except the dedicated
+              /flash-deals page. Show the discount badge here so it shows up
+              on the home page and /listings grid too. */}
+          {listing.isFlashDeal && (
+            <div className={cn(
+              "absolute left-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-orange-500 text-white",
+              boost ? "top-11" : "top-3"
+            )}>
+              <Zap className="w-3 h-3" />
+              Flash Deal
+            </div>
+          )}
+
           {/* Verified badge */}
           {listing.isPropertyVerified && (
             <div className="absolute top-3 right-12 badge-verified text-xs">
@@ -156,10 +171,24 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
           <span className="truncate">{listing.location.lga}, {listing.location.state}</span>
         </div>
 
-        {/* Price */}
-        <p className="mt-2 text-lg font-bold text-primary font-serif">
-          {priceLabel}
-        </p>
+        {/* Price — flash deal shows struck-through original + discounted price */}
+        {listing.isFlashDeal && listing.flashDealPrice != null ? (
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <p className="text-lg font-bold text-orange-600 font-serif">
+              {formatCurrency(listing.flashDealPrice)}
+            </p>
+            <p className="text-xs text-muted-foreground line-through">
+              {formatCurrency(listing.price)}
+            </p>
+            <span className="text-[11px] font-bold text-white bg-orange-500 px-1.5 py-0.5 rounded">
+              -{Math.round(((listing.price - listing.flashDealPrice) / listing.price) * 100)}%
+            </span>
+          </div>
+        ) : (
+          <p className="mt-2 text-lg font-bold text-primary font-serif">
+            {priceLabel}
+          </p>
+        )}
 
         {/* ✅ Escrow Protected badge — shown directly on the card, before
             the listing is even opened, so buyers see the trust signal
