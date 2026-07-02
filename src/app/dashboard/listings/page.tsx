@@ -147,6 +147,15 @@ export default function MyListingsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {/* ✅ FIX: Edit2 icon was imported but never actually
+                        used anywhere — the Edit action itself was missing
+                        from this menu, even though the edit page already
+                        exists at /dashboard/listings/edit/[id]. */}
+                    <DropdownMenuItem asChild>
+                      <Link href={`/dashboard/listings/edit/${listing.id}`}>
+                        <Edit2 className="mr-2 h-4 w-4" /> Edit
+                      </Link>
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleToggle(listing)}>
                       {listing.status === "active"
                         ? <><Pause className="mr-2 h-4 w-4" /> Pause</>
