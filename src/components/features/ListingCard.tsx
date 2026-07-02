@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bath, Bed, Building2, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield } from "lucide-react";
+import { Bath, Bed, Heart, MapPin, Maximize2, Star, Rocket, Flame, Eye, CheckCircle2, Shield } from "lucide-react";
 import { cn, formatPriceLabel } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -165,13 +165,13 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
             the listing is even opened, so buyers see the trust signal
             immediately while browsing (not just after clicking in). Fee
             text reads the real admin-configured buyer fee percent. */}
-        <div className="mt-2 flex items-center justify-between gap-1.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/40 rounded-lg px-2.5 py-1.5">
-          <div className="flex items-center gap-1.5">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-1.5 gap-y-0.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/40 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
             <Shield className="w-3.5 h-3.5 text-green-600 shrink-0" />
-            <span className="text-xs font-medium text-green-700 dark:text-green-400">Escrow Protected</span>
+            <span className="text-xs font-medium text-green-700 dark:text-green-400 truncate">Escrow Protected</span>
           </div>
           {buyerFeePercent !== null && (
-            <span className="text-[11px] text-green-600/80 dark:text-green-400/70 shrink-0">
+            <span className="text-[11px] text-green-600/80 dark:text-green-400/70 whitespace-nowrap shrink-0">
               {buyerFeePercent}% buyer fee
             </span>
           )}
@@ -198,15 +198,9 @@ export default function ListingCard({ listing, onSave, isSaved, compact }: Listi
           </div>
         )}
 
-        {/* Agent */}
-        <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Building2 className="w-3 h-3" />
-            <span className="truncate max-w-[120px]">{listing.agent?.name}</span>
-            {listing.agent?.isVerified && (
-              <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
-            )}
-          </div>
+        {/* View button — seller/agent name intentionally omitted here so
+            this row stays compact and responsive across card widths. */}
+        <div className="mt-3 pt-3 border-t border-border flex items-center justify-end">
           <Link href={`/listings/${listing.id}`}>
             <Button size="sm" variant="outline" className="h-7 text-xs px-3">
               View
