@@ -102,6 +102,29 @@ export async function POST(request: NextRequest) {
     cfg.escrowFees
   );
 
+  // ✅ Prevent duplicate orders: if this buyer already has a live (not
+  // cancelled/expired) escrow on this same listing, don't create another —
+  // send them back to the existing one instead. Only "pending" and
+  // "awaiting_confirmation" count as "still needs the buyer's attention";
+  // anything further along (funded/held/etc) is also blocking since the
+  // deal is already in progress.
+  const existing = await d1Query<EscrowRow>(
+    `SELECT * FROM escrows WHERE listing_id = ? AND buyer_id = ?
+     AND status NOT IN ('cancelled', 'expired', 'refunded')
+     ORDER BY created_at DESC LIMIT 1`,
+    [body.listingId, buyerId]
+  );
+  if (existing.length) {
+    return NextResponse.json(
+      {
+        error: "duplicate_order",
+        message: "You already have an active order for this listing.",
+        escrow: rowToEscrow(existing[0], buyerId),
+      },
+      { status: 409 }
+    );
+  }
+
   const id = newId();
   const now = new Date().toISOString();
   const meta = JSON.stringify({
