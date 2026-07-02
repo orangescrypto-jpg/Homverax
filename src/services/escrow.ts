@@ -126,20 +126,24 @@ export async function initiateEscrow(params: {
   return escrow as EscrowTransaction;
 }
 
+// ✅ FIX: was calling d1Query() directly from the client, which — via the
+// admin-gated proxy — silently blocked regular buyers/sellers from loading
+// their own escrow, surfacing as "Transaction not found" / "Failed to load
+// escrow". Now calls a public route scoped to the signed-in party.
 export async function getEscrowById(id: string): Promise<EscrowTransaction | null> {
-  const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
-  if (!rows.length) return null;
-  return rowToEscrow(rows[0]);
+  const res = await fetch(`/api/escrow/${id}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const { escrow } = await res.json();
+  return escrow as EscrowTransaction;
 }
 
+// ✅ FIX: same issue as getEscrowById — now calls a public route scoped to
+// the signed-in user instead of hitting D1 directly from the client.
 export async function getMyEscrows(userId: string): Promise<EscrowTransaction[]> {
-  const rows = await d1Query<EscrowRow>(
-    "SELECT * FROM escrows WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC",
-    [userId, userId]
-  );
-  const map = new Map<string, EscrowTransaction>();
-  rows.forEach((r) => map.set(r.id, rowToEscrow(r, userId)));
-  return Array.from(map.values());
+  const res = await fetch("/api/escrow/mine", { cache: "no-store" });
+  if (!res.ok) return [];
+  const { escrows } = await res.json();
+  return escrows as EscrowTransaction[];
 }
 
 async function updateMeta(id: string, extra: Record<string, unknown>): Promise<void> {
@@ -151,7 +155,31 @@ async function updateMeta(id: string, extra: Record<string, unknown>): Promise<v
   await d1Exec("UPDATE escrows SET meta = ?, updated_at = ? WHERE id = ?", [JSON.stringify(merged), now, id]);
 }
 
+// ✅ FIX: updateEscrowStatus() used by buyer/seller actions (submit
+// transfer proof, hold, start inspection, confirm delivery, open dispute)
+// used to call d1Exec() directly from the client, hitting the admin-gated
+// proxy and failing silently for regular users ("Action failed. Please
+// try again."). This version goes through the public, party-scoped PATCH
+// route instead. Admin-only status changes (confirm funding, release,
+// resolve dispute) keep using updateEscrowStatusAdmin below, which is
+// correctly gated to staff via the existing D1 proxy.
 export async function updateEscrowStatus(
+  id: string,
+  status: EscrowStatus,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch(`/api/escrow/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, extra }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to update escrow");
+  }
+}
+
+async function updateEscrowStatusAdmin(
   id: string,
   status: EscrowStatus,
   extra?: Record<string, unknown>,
@@ -173,7 +201,7 @@ export async function submitTransferProof(id: string, reference: string): Promis
  * Triggers escrow_funded emails to both buyer and seller (fire-and-forget).
  */
 export async function adminConfirmFunding(id: string, adminNote?: string): Promise<void> {
-  await updateEscrowStatus(id, "funded", { depositPaidAt: new Date().toISOString(), adminNote: adminNote ?? null });
+  await updateEscrowStatusAdmin(id, "funded", { depositPaidAt: new Date().toISOString(), adminNote: adminNote ?? null });
 
   // ── Email trigger: escrow funded ──────────────────────────────────────────
   try {
@@ -250,7 +278,7 @@ export async function openDispute(id: string, reason: string): Promise<void> {
 }
 
 export async function resolveDispute(id: string, refund: boolean): Promise<void> {
-  await updateEscrowStatus(id, refund ? "refunded" : "resolved", { resolvedAt: new Date().toISOString() });
+  await updateEscrowStatusAdmin(id, refund ? "refunded" : "resolved", { resolvedAt: new Date().toISOString() });
 }
 
 export async function getAllEscrows(): Promise<EscrowTransaction[]> {
@@ -263,7 +291,7 @@ export async function getAllEscrows(): Promise<EscrowTransaction[]> {
  * Triggers escrow_released emails to both parties (fire-and-forget).
  */
 export async function releaseToSeller(id: string, adminNote: string, paymentReference: string): Promise<void> {
-  await updateEscrowStatus(id, "released", {
+  await updateEscrowStatusAdmin(id, "released", {
     releasedAt: new Date().toISOString(),
     adminReleaseNote: adminNote,
     adminPaymentReference: paymentReference,
