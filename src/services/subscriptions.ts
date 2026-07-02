@@ -89,24 +89,24 @@ export async function submitBoostPayment(params: {
   }
 }
 
+// ✅ FIX: this used to call d1Query() directly from client code, which
+// (after lib/d1.ts started routing browser D1 calls through the
+// admin/moderator-only proxy at /api/admin/d1) meant every regular
+// (non-staff) user got a silent 403 here. That broke the Subscription
+// page (empty plan comparison table, "0/3 listings used" placeholder
+// forever) and the Analytics page (Promise.all rejected so the whole
+// page never loaded real data) for everyone except admin/moderator.
+// Now routed through /api/subscriptions/status, gated to "signed in"
+// only.
 export async function getUserPlanStatus(userId: string, userPlanSlug: string, expiryIso?: string): Promise<PlanStatus> {
-  const cfg = await getPlatformConfig();
-  const plan = cfg.subscriptionPlans.find((p) => p.slug === userPlanSlug) ?? cfg.subscriptionPlans[0];
-  const isActive = userPlanSlug !== "free" && expiryIso ? new Date(expiryIso) > new Date() : userPlanSlug === "free";
-
-  const activeCountRows = await d1Query<{ cnt: number }>(
-    "SELECT COUNT(*) as cnt FROM listings WHERE agent_id = ? AND status = 'active'", [userId]
-  );
-  const activeListingCount = activeCountRows[0]?.cnt ?? 0;
-  const maxListings = plan.maxListings === 999999 ? Infinity : (plan.maxListings ?? 0);
-
-  return {
-    plan, isActive, canPost: activeListingCount < maxListings,
-    activeListingCount, remainingSlots: maxListings === Infinity ? 999 : Math.max(0, maxListings - activeListingCount),
-    canAccessLeads: (plan as unknown as { leadsAccess?: boolean }).leadsAccess === true,
-    hasVerifiedBadge: userPlanSlug === "pro" || userPlanSlug === "premium",
-    expiresAt: expiryIso,
-  };
+  const qs = new URLSearchParams({ plan: userPlanSlug });
+  if (expiryIso) qs.set("expiry", expiryIso);
+  const res = await fetch(`/api/subscriptions/status?${qs.toString()}`, { cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to load subscription status");
+  }
+  return res.json() as Promise<PlanStatus>;
 }
 
 export async function getAllSubscriptionPayments(): Promise<SubscriptionPaymentRecord[]> {
