@@ -59,7 +59,6 @@ export default function EscrowDetailPage() {
 
   // Transfer proof form
   const [transferRef, setTransferRef] = useState("");
-  const [showTransferForm, setShowTransferForm] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
@@ -100,32 +99,30 @@ export default function EscrowDetailPage() {
   };
 
   const handleSubmitTransfer = async () => {
-    if (!transferRef.trim()) {
-      toast.error("Enter your bank transfer reference / teller number");
+    if (!receiptFile) {
+      toast.error("Attach a photo or screenshot of your payment receipt before continuing");
       return;
     }
     let receiptUrl: string | undefined;
-    if (receiptFile) {
-      setIsUploadingReceipt(true);
-      try {
-        const formData = new FormData();
-        formData.append("file", receiptFile);
-        formData.append("path", `escrow-receipts/${id}-${Date.now()}-${receiptFile.name}`);
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
-        if (!res.ok) throw new Error("Upload failed");
-        const data = await res.json();
-        receiptUrl = data.url;
-      } catch {
-        toast.error("Failed to upload receipt. Submitting without it — you can email it instead.");
-      } finally {
-        setIsUploadingReceipt(false);
-      }
+    setIsUploadingReceipt(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", receiptFile);
+      formData.append("path", `escrow-receipts/${id}-${Date.now()}-${receiptFile.name}`);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      receiptUrl = data.url;
+    } catch {
+      toast.error("Failed to upload receipt. Please try attaching it again.");
+      setIsUploadingReceipt(false);
+      return;
     }
+    setIsUploadingReceipt(false);
     await act(
       () => submitTransferProof(id, transferRef.trim(), receiptUrl),
       "Transfer submitted! We'll confirm within 1 business hour."
     );
-    setShowTransferForm(false);
     setTransferRef("");
     setReceiptFile(null);
   };
@@ -384,92 +381,81 @@ export default function EscrowDetailPage() {
                   </p>
                 </div>
 
-                {/* Confirm transfer button */}
-                {!showTransferForm ? (
-                  <div className="space-y-2">
-                    <Button
-                      className="w-full gap-2"
-                      onClick={() => setShowTransferForm(true)}
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      I've Made the Transfer
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
-                      disabled={isCancelling}
-                      onClick={handleCancelOrder}
-                    >
-                      {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      Cancel Order
-                    </Button>
-                    <p className="text-xs text-muted-foreground text-center">
-                      Unpaid orders are automatically deleted after 24 hours.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 bg-secondary/50 p-4 rounded-xl">
-                    <p className="text-sm font-medium text-foreground">
-                      Enter your transfer reference
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      This is the teller number or transaction ID shown on your banking app or receipt.
-                    </p>
+                {/* Transfer reference + receipt upload — always visible so the
+                    buyer can attach proof before confirming, not hidden
+                    behind an extra click */}
+                <div className="space-y-3 bg-secondary/50 p-4 rounded-xl">
+                  <div>
+                    <Label htmlFor="transfer-ref" className="text-sm font-medium text-foreground mb-1.5 block">
+                      Transfer reference / teller number <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
                     <Input
+                      id="transfer-ref"
                       placeholder="e.g. TRF/123456789 or your teller number"
                       value={transferRef}
                       onChange={(e) => setTransferRef(e.target.value)}
                       className="text-sm"
                     />
-                    <div>
-                      <Label htmlFor="receipt-upload" className="text-sm font-medium text-foreground mb-1.5 block">
-                        Payment receipt / screenshot <span className="text-muted-foreground font-normal">(optional, recommended)</span>
-                      </Label>
-                      <label
-                        htmlFor="receipt-upload"
-                        className="flex items-center gap-2 border border-dashed border-border rounded-xl px-3 py-2.5 text-sm cursor-pointer hover:bg-secondary/50 transition-colors"
-                      >
-                        {receiptFile ? (
-                          <>
-                            <FileImage className="w-4 h-4 text-primary shrink-0" />
-                            <span className="truncate text-foreground">{receiptFile.name}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
-                            <span className="text-muted-foreground">Attach a photo or screenshot of your receipt</span>
-                          </>
-                        )}
-                      </label>
-                      <input
-                        id="receipt-upload"
-                        type="file"
-                        accept="image/*,application/pdf"
-                        className="hidden"
-                        onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        className="flex-1 gap-2"
-                        disabled={isActing || isUploadingReceipt || !transferRef.trim()}
-                        onClick={handleSubmitTransfer}
-                      >
-                        {(isActing || isUploadingReceipt)
-                          ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <CheckCircle2 className="w-4 h-4" />
-                        }
-                        {isUploadingReceipt ? "Uploading receipt…" : "Submit Transfer"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => { setShowTransferForm(false); setTransferRef(""); setReceiptFile(null); }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
                   </div>
-                )}
+                  <div>
+                    <Label htmlFor="receipt-upload" className="text-sm font-medium text-foreground mb-1.5 block">
+                      Payment receipt / screenshot <span className="text-destructive font-normal">(required)</span>
+                    </Label>
+                    <label
+                      htmlFor="receipt-upload"
+                      className="flex items-center gap-2 border border-dashed border-border rounded-xl px-3 py-2.5 text-sm cursor-pointer hover:bg-secondary/50 transition-colors"
+                    >
+                      {receiptFile ? (
+                        <>
+                          <FileImage className="w-4 h-4 text-primary shrink-0" />
+                          <span className="truncate text-foreground">{receiptFile.name}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="text-muted-foreground">Attach a photo or screenshot of your receipt</span>
+                        </>
+                      )}
+                    </label>
+                    <input
+                      id="receipt-upload"
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      Uploaded receipts are visible to admin alongside your payment reference, as proof of transfer.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Confirm transfer button */}
+                <div className="space-y-2">
+                  <Button
+                    className="w-full gap-2"
+                    disabled={isActing || isUploadingReceipt || !receiptFile}
+                    onClick={handleSubmitTransfer}
+                  >
+                    {(isActing || isUploadingReceipt)
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <CheckCircle2 className="w-4 h-4" />
+                    }
+                    {isUploadingReceipt ? "Uploading receipt…" : "I've Made the Transfer"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+                    disabled={isCancelling}
+                    onClick={handleCancelOrder}
+                  >
+                    {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Cancel Order
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Unpaid orders are automatically deleted after 24 hours.
+                  </p>
+                </div>
               </div>
             )}
 
