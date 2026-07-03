@@ -260,16 +260,59 @@ export async function attachListingToConversation(
   return sendMessage(conversationId, senderId, receiverId, content, listingId);
 }
 
-export async function acceptOfferFromChat(offerId: string): Promise<void> {
-  await acceptOffer(offerId);
+/**
+ * Send a follow-up chat message carrying the offer's fresh status/data.
+ * ✅ FIX: acceptOfferFromChat/rejectOfferFromChat/counterOfferFromChat only
+ * updated the offer row in D1 (platform_settings) — they never touched the
+ * chat thread. Since OfferCard reads its status from msg.offerData.status,
+ * and that message was created once at "pending" and never updated, the
+ * chat bubble stayed frozen on "Pending" forever even though the backend
+ * record was correct. This posts a new offer-type message after every
+ * status change so the thread (and the existing realtime INSERT
+ * subscription) picks up the new status live for both sides.
+ */
+async function postOfferStatusMessage(
+  conversationId: string,
+  senderId: string,
+  receiverId: string,
+  offer: Offer,
+): Promise<void> {
+  const statusText: Record<string, string> = {
+    accepted: `✅ Offer accepted: ₦${offer.proposedPrice.toLocaleString()}`,
+    rejected: `❌ Offer declined: ₦${offer.proposedPrice.toLocaleString()}`,
+    countered: `🔄 Counter-offer: ₦${(offer.counterPrice ?? offer.proposedPrice).toLocaleString()}`,
+    paid: `✅ Offer paid to escrow: ₦${offer.proposedPrice.toLocaleString()}`,
+  };
+  const content = JSON.stringify({
+    _type: "offer",
+    _offerData: {
+      offerId: offer.id, proposedPrice: offer.proposedPrice, originalPrice: offer.originalPrice,
+      status: offer.status, note: offer.note, sellerId: offer.sellerId, listingId: offer.listingId,
+      counterPrice: offer.counterPrice, counterNote: offer.counterNote,
+    },
+    _text: statusText[offer.status] ?? `Offer ${offer.status}`,
+  });
+  await sendMessage(conversationId, senderId, receiverId, content);
 }
 
-export async function rejectOfferFromChat(offerId: string): Promise<void> {
-  await rejectOffer(offerId);
+export async function acceptOfferFromChat(
+  offerId: string, conversationId: string, senderId: string, receiverId: string,
+): Promise<void> {
+  const offer = await acceptOffer(offerId);
+  await postOfferStatusMessage(conversationId, senderId, receiverId, offer);
+}
+
+export async function rejectOfferFromChat(
+  offerId: string, conversationId: string, senderId: string, receiverId: string,
+): Promise<void> {
+  const offer = await rejectOffer(offerId);
+  await postOfferStatusMessage(conversationId, senderId, receiverId, offer);
 }
 
 export async function counterOfferFromChat(
-  offerId: string, counterPrice: number, counterNote?: string,
+  offerId: string, counterPrice: number, counterNote: string | undefined,
+  conversationId: string, senderId: string, receiverId: string,
 ): Promise<void> {
-  await counterOffer(offerId, counterPrice, counterNote);
+  const offer = await counterOffer(offerId, counterPrice, counterNote);
+  await postOfferStatusMessage(conversationId, senderId, receiverId, offer);
 }
