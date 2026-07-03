@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
 
     // Per-event toggle check
     const toggleMap: Record<string, keyof typeof cfg.email> = {
+      escrow_initiated_seller:  "onEscrowInitiated",
       escrow_funded_buyer:      "onEscrowFunded",
       escrow_funded_seller:     "onEscrowFunded",
       escrow_released_seller:   "onEscrowReleased",
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
 
 function buildSubject(template: string, data: Record<string, unknown>): string {
   const subjects: Record<string, string> = {
+    escrow_initiated_seller: `🛒 A Buyer Wants — ${data.listingTitle}`,
     escrow_funded_buyer:     `✅ Payment Confirmed — ${data.listingTitle}`,
     escrow_funded_seller:    `💰 Funds Received in Escrow — ${data.listingTitle}`,
     escrow_released_seller:  `🎉 Funds Released — ${data.listingTitle}`,
@@ -236,6 +238,23 @@ function naira(n: unknown): string {
 
 // ─── Individual template builders ─────────────────────────────────────────────
 
+function tmplEscrowInitiatedSeller(d: Record<string, unknown>, appName: string, supportEmail: string): string {
+  const body = `
+    ${greeting(String(d.sellerName ?? ""))}
+    ${para(`<strong>${esc(d.buyerName)}</strong> has started a purchase for your listing <strong>${esc(d.listingTitle)}</strong> and payment is now pending.`)}
+    ${infoTable(
+      infoRow("Listing", esc(d.listingTitle)) +
+      infoRow("Buyer", esc(d.buyerName)) +
+      infoRow("Escrow ID", `#${esc(d.escrowId)}`) +
+      infoRow("Status", "⏳ Payment pending")
+    )}
+    ${highlightBox(`You'll be notified as soon as payment is confirmed. A conversation with the buyer has also been started — check your ${appName} Messages to say hello.`)}
+    ${divider()}
+    ${para(`Questions? Contact <a href="mailto:${supportEmail}" style="color:${BRAND.indigo};">${supportEmail}</a>.`)}
+  `;
+  return layout(appName, supportEmail, BRAND.indigo, "Buyer Started a Purchase", body);
+}
+
 function tmplEscrowFundedBuyer(d: Record<string, unknown>, appName: string, supportEmail: string): string {
   const body = `
     ${greeting(String(d.buyerName ?? ""))}
@@ -254,6 +273,7 @@ function tmplEscrowFundedBuyer(d: Record<string, unknown>, appName: string, supp
 }
 
 function tmplEscrowFundedSeller(d: Record<string, unknown>, appName: string, supportEmail: string): string {
+  const buyerPhone = typeof d.buyerPhone === "string" && d.buyerPhone.trim() ? d.buyerPhone.trim() : null;
   const body = `
     ${greeting(String(d.sellerName ?? ""))}
     ${para(`Great news! A buyer has funded the escrow for your listing <strong>${esc(d.listingTitle)}</strong>. The funds are safely held in escrow and will be released to you after the buyer confirms delivery.`)}
@@ -261,6 +281,7 @@ function tmplEscrowFundedSeller(d: Record<string, unknown>, appName: string, sup
       infoRow("Listing", esc(d.listingTitle)) +
       infoRow("Escrow Amount", naira(d.amount)) +
       infoRow("Buyer", esc(d.buyerName)) +
+      (buyerPhone ? infoRow("Buyer Phone", esc(buyerPhone)) : "") +
       infoRow("Escrow ID", `#${esc(d.escrowId)}`) +
       infoRow("Status", "💰 Funds held in escrow")
     )}
@@ -397,6 +418,7 @@ function buildHtml(
   supportEmail: string,
 ): string {
   switch (template) {
+    case "escrow_initiated_seller":  return tmplEscrowInitiatedSeller(data, appName, supportEmail);
     case "escrow_funded_buyer":     return tmplEscrowFundedBuyer(data, appName, supportEmail);
     case "escrow_funded_seller":    return tmplEscrowFundedSeller(data, appName, supportEmail);
     case "escrow_released_seller":  return tmplEscrowReleasedSeller(data, appName, supportEmail);
