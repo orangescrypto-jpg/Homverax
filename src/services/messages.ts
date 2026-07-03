@@ -237,6 +237,29 @@ export async function sendOfferMessage(params: {
   return { message: { ...msg, type: "offer" }, offer };
 }
 
+/**
+ * Attach a listing to an existing conversation that doesn't have one yet
+ * (e.g. a chat started outside of a listing page). There's no standalone
+ * "conversation" row in D1 — listingId is derived by the GET /api/conversations
+ * route from the listing_id column on messages in that thread — so
+ * "attaching" a listing means sending a small system message that carries
+ * listingId. The next conversations fetch (or realtime refresh) will then
+ * show the ConversationListingCard and enable the Make Offer button.
+ */
+export async function attachListingToConversation(
+  conversationId: string,
+  senderId: string,
+  receiverId: string,
+  listingId: string,
+  listingTitle: string,
+): Promise<Message> {
+  const content = JSON.stringify({
+    _type: "listing_attached",
+    _text: `📎 Attached listing: ${listingTitle}`,
+  });
+  return sendMessage(conversationId, senderId, receiverId, content, listingId);
+}
+
 export async function acceptOfferFromChat(offerId: string): Promise<void> {
   await acceptOffer(offerId);
 }
