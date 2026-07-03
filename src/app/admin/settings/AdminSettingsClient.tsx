@@ -975,6 +975,7 @@ export default function AdminSettingsClient() {
             <div className="pt-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Send email on:</p>
               {[
+                { key: "onEscrowInitiated" as const, label: "Escrow initiated (seller notified early)" },
                 { key: "onEscrowFunded" as const, label: "Escrow funded" },
                 { key: "onEscrowReleased" as const, label: "Escrow released" },
                 { key: "onBookingConfirmed" as const, label: "Booking confirmed" },
