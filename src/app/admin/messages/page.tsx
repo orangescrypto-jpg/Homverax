@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { MessageSquare, Search, ArrowLeft, RefreshCw, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { MessageSquare, Search, ArrowLeft, RefreshCw, Loader2, Send } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 
 interface AdminConversation {
   id: string;
@@ -37,6 +38,9 @@ export default function AdminMessagesPage() {
   const [selected, setSelected] = useState<AdminConversation | null>(null);
   const [thread, setThread] = useState<AdminMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   async function loadConversations(q = "") {
     setIsLoading(true);
@@ -59,18 +63,74 @@ export default function AdminMessagesPage() {
     loadConversations();
   }, []);
 
+  async function fetchThread(conversationId: string) {
+    const res = await fetch(`/api/admin/conversations/${conversationId}/messages`, { cache: "no-store" });
+    if (!res.ok) throw new Error("Failed to load messages");
+    const { messages } = await res.json();
+    return (messages ?? []) as AdminMessage[];
+  }
+
   async function openConversation(conv: AdminConversation) {
     setSelected(conv);
     setThreadLoading(true);
     try {
-      const res = await fetch(`/api/admin/conversations/${conv.id}/messages`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load messages");
-      const { messages } = await res.json();
-      setThread(messages ?? []);
+      const messages = await fetchThread(conv.id);
+      setThread(messages);
     } catch {
       toast.error("Failed to load conversation");
     } finally {
       setThreadLoading(false);
+    }
+  }
+
+  // ── Realtime: subscribe to new inserts on this conversation while open ──
+  useEffect(() => {
+    if (!selected) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`admin-messages:${selected.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${selected.id}` },
+        async () => {
+          // Re-fetch through our route so we get resolved sender names/content parsing.
+          try {
+            const messages = await fetchThread(selected.id);
+            setThread(messages);
+          } catch {
+            // silent — next poll/refresh will catch up
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selected]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [thread]);
+
+  async function handleSend() {
+    if (!selected || !replyText.trim() || sending) return;
+    const content = replyText.trim();
+    setSending(true);
+    try {
+      const res = await fetch(`/api/admin/conversations/${selected.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? "Failed to send message");
+      }
+      const { message } = await res.json();
+      setThread((prev) => [...prev, message]);
+      setReplyText("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send message");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -98,10 +158,10 @@ export default function AdminMessagesPage() {
       </div>
 
       {selected ? (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="p-4 border-b border-border flex items-center gap-3">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-border flex items-center gap-3 shrink-0">
             <button
-              onClick={() => { setSelected(null); setThread([]); }}
+              onClick={() => { setSelected(null); setThread([]); setReplyText(""); }}
               className="p-2 rounded-lg hover:bg-muted transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -119,7 +179,7 @@ export default function AdminMessagesPage() {
             </div>
           </div>
 
-          <div className="p-4 max-h-[60vh] overflow-y-auto space-y-3">
+          <div ref={scrollRef} className="p-4 max-h-[55vh] overflow-y-auto space-y-3">
             {threadLoading ? (
               <div className="flex justify-center py-10">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -144,6 +204,31 @@ export default function AdminMessagesPage() {
                 </div>
               ))
             )}
+          </div>
+
+          {/* Reply box */}
+          <div className="p-3 border-t border-border flex items-end gap-2 shrink-0">
+            <textarea
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Reply as HomveraX Support..."
+              rows={1}
+              className="flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 max-h-32"
+            />
+            <button
+              onClick={handleSend}
+              disabled={sending || !replyText.trim()}
+              className="shrink-0 p-2.5 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+              title="Send"
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
           </div>
         </div>
       ) : (
