@@ -19,6 +19,7 @@ import {
   calcBuyerServiceCharge,
   calcSellerPlatformFee,
 } from "@/services/platformSettings";
+import { sendEscrowInitiatedEmail } from "@/services/emailService";
 import type { EscrowTransaction, EscrowStatus } from "@/types";
 
 interface EscrowRow {
@@ -146,6 +147,69 @@ export async function POST(request: NextRequest) {
     "INSERT INTO escrows (id, listing_id, buyer_id, seller_id, amount, status, meta, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, body.listingId, buyerId, body.sellerId, body.amount, "pending", meta, now, now]
   );
+
+  // ── Feature 1: notify seller that escrow has been initiated ──────────────
+  // Fire-and-forget — a failed/slow email must never block escrow creation
+  // or the buyer's flow. No phone number is shared here (business rule:
+  // contact info only shared once payment is confirmed/funded).
+  try {
+    const [buyerRow] = await d1Query<{ id: string; name: string }>(
+      "SELECT id, name FROM users WHERE id = ?",
+      [buyerId]
+    );
+    const [sellerRow] = await d1Query<{ id: string; email: string; name: string }>(
+      "SELECT id, email, name FROM users WHERE id = ?",
+      [body.sellerId]
+    );
+    if (sellerRow) {
+      void sendEscrowInitiatedEmail({
+        sellerEmail: sellerRow.email,
+        sellerName: sellerRow.name,
+        buyerName: buyerRow?.name ?? "A buyer",
+        listingTitle: body.listingTitle ?? "",
+        escrowId: id,
+      });
+    }
+  } catch (err) {
+    console.warn("[escrow] sendEscrowInitiatedEmail error:", err);
+  }
+
+  // ── Feature 3: auto-open a chat thread between buyer and seller ──────────
+  // Fire-and-forget — a failure here must never block escrow creation.
+  // Conversations in this app aren't their own row; a thread only exists
+  // once a message has been sent (found later by matching sender/receiver/
+  // listing on the messages table — see services/messages.ts). So we send
+  // one small system-style message on the buyer's behalf. The buyer never
+  // sees this happen and isn't taken to the chat — they proceed straight
+  // to the bank transfer screen as normal. The seller will see the thread
+  // (with this message already in it) whenever they open Messages, and can
+  // reply immediately, well before payment is confirmed.
+  //
+  // Inlined rather than importing startConversation()/sendMessage() from
+  // services/messages.ts, since that module imports the browser Supabase
+  // client (@/lib/supabase/client) and isn't safe to import into a server
+  // route. Same find-existing-first logic as startConversation(): reuse
+  // the buyer/seller/listing thread if one already exists (e.g. they
+  // messaged before buying), otherwise start a new one.
+  try {
+    const existingMsg = await d1Query<{ conversation_id: string }>(
+      `SELECT conversation_id FROM messages
+       WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+       AND listing_id IS ? LIMIT 1`,
+      [buyerId, body.sellerId, body.sellerId, buyerId, body.listingId ?? null]
+    );
+    const convId = existingMsg.length ? existingMsg[0].conversation_id : newId();
+    const msgId = newId();
+    const autoMessage =
+      `Escrow started for "${body.listingTitle ?? "this listing"}" — ` +
+      `payment is pending. I'll share proof of payment here once I've made the transfer.`;
+    await d1Exec(
+      "INSERT INTO messages (id, conversation_id, sender_id, receiver_id, listing_id, content, read, created_at) VALUES (?,?,?,?,?,?,?,?)",
+      [msgId, convId, buyerId, body.sellerId, body.listingId, autoMessage, 0, now]
+    );
+  } catch (err) {
+    console.warn("[escrow] auto-conversation creation error:", err);
+  }
 
   const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
   return NextResponse.json({ escrow: rowToEscrow(rows[0], buyerId) });
