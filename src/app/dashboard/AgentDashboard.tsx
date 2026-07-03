@@ -19,7 +19,7 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight, BarChart2, Building2, CheckCircle2,
-  Clock, Crown, Eye, Loader2, MapPin, PlusCircle,
+  Clock, Crown, Eye, Loader2, MapPin, MessageSquare, PlusCircle,
   Shield, Star, Tag, TrendingUp, Wallet, X, AlertCircle,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -29,10 +29,12 @@ import { getMyListings } from "@/services/listings";
 import { getMyEscrows } from "@/services/escrow";
 import { getOrCreateWallet, getWalletTransactions } from "@/services/wallet";
 import { getMyBookings } from "@/services/bookings";
+import { getMyConversations } from "@/services/messages";
 import { getUserPlanStatus } from "@/services/subscriptions";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
 import type { PropertyListing, EscrowTransaction, Booking } from "@/types";
 import type { SellerWallet, WalletTransaction } from "@/services/wallet";
+import type { Conversation } from "@/types";
 import type { PlanStatus } from "@/services/subscriptions";
 
 const ESCROW_COLOR: Record<string, string> = {
@@ -76,6 +78,7 @@ export default function AgentDashboard() {
   const [listings, setListings]           = useState<PropertyListing[]>([]);
   const [escrows, setEscrows]             = useState<EscrowTransaction[]>([]);
   const [bookings, setBookings]           = useState<Booking[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [wallet, setWallet]               = useState<SellerWallet | null>(null);
   const [walletTxns, setWalletTxns]       = useState<WalletTransaction[]>([]);
   const [planStatus, setPlanStatus]       = useState<PlanStatus | null>(null);
@@ -87,14 +90,16 @@ export default function AgentDashboard() {
       getMyListings(user.id),
       getMyEscrows(user.id),
       getMyBookings(user.id),
+      getMyConversations(user.id),
       getOrCreateWallet(user.id),
       getWalletTransactions(user.id, 5),
       getUserPlanStatus(user.id, user.subscriptionPlan ?? "free", user.subscriptionExpiry),
     ])
-      .then(([l, e, b, w, wt, ps]) => {
+      .then(([l, e, b, c, w, wt, ps]) => {
         setListings(l);
         setEscrows(e);
         setBookings(b);
+        setConversations(c);
         setWallet(w);
         setWalletTxns(wt);
         setPlanStatus(ps);
@@ -110,6 +115,7 @@ export default function AgentDashboard() {
   const totalViews       = listings.reduce((s, l) => s + (l.viewsCount ?? 0), 0);
   const activeEscrows    = escrows.filter((e) => !["released", "refunded", "resolved", "cancelled"].includes(e.status));
   const pendingBookings  = bookings.filter((b) => b.sellerId === user?.id && b.status === "pending");
+  const unreadMsgs       = conversations.reduce((s, c) => s + (c.unreadFor === user?.id ? c.unreadCount : 0), 0);
   const maxListings      = planStatus ? (planStatus.plan.maxListings === 999999 ? Infinity : planStatus.plan.maxListings) : 3;
   const slotsUsed        = activeListings.length;
   const slotsTotal       = maxListings === Infinity ? null : maxListings;
@@ -161,11 +167,11 @@ export default function AgentDashboard() {
 
       {/* ── Stat cards ───────────────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-28 rounded-2xl" />)}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          {[...Array(5)].map((_, i) => <div key={i} className="skeleton h-28 rounded-2xl" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <StatCard label="Active Listings" value={activeListings.length}
             sub={`${listings.length} total`} icon={Building2} href="/dashboard/listings" />
           <StatCard label="Total Views" value={totalViews.toLocaleString()}
@@ -176,6 +182,9 @@ export default function AgentDashboard() {
           <StatCard label="Active Escrows" value={activeEscrows.length}
             sub={activeEscrows.length > 0 ? formatCurrency(activeEscrows.reduce((s, e) => s + e.amount, 0)) : "No active deals"}
             icon={Shield} color="text-purple-500" href="/dashboard/escrow" />
+          <StatCard label="Messages" value={unreadMsgs > 0 ? `${unreadMsgs} unread` : conversations.length}
+            sub={unreadMsgs > 0 ? "Needs a reply" : conversations.length > 0 ? "All caught up" : "No conversations yet"}
+            icon={MessageSquare} color="text-amber-500" href="/messages" />
         </div>
       )}
 
@@ -222,6 +231,7 @@ export default function AgentDashboard() {
             {[
               { label: isLandlord ? "Add Property" : "New Listing", icon: PlusCircle, href: "/dashboard/listings/new", color: "text-primary" },
               { label: "Boost Listing", icon: Tag, href: "/dashboard/boost", color: "text-accent" },
+              { label: "Messages", icon: MessageSquare, href: "/messages", color: "text-amber-500" },
               { label: "Analytics", icon: BarChart2, href: "/dashboard/analytics", color: "text-blue-500" },
               { label: "Wallet", icon: Wallet, href: "/dashboard/wallet", color: "text-green-500" },
               { label: "Escrow", icon: Shield, href: "/dashboard/escrow", color: "text-purple-500" },
