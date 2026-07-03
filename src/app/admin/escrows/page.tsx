@@ -380,19 +380,34 @@ export default function AdminEscrowsPage() {
                           Check your bank app for a transfer with this reference of{" "}
                           <strong>{formatCurrency(e.amount + e.platformFee)}</strong>.
                         </p>
-                        {(e as any).receiptUrl && (
-                          <a
-                            href={(e as any).receiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(ev) => ev.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold text-blue-700 dark:text-blue-300 underline"
-                          >
-                            View uploaded receipt →
-                          </a>
-                        )}
                       </div>
                     )}
+
+                    {/* Payment receipt — shown independently of the reference,
+                        since a buyer can attach a receipt without typing a
+                        reference (reference is optional, receipt is required) */}
+                    {(e as any).receiptUrl ? (
+                      <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-xl p-3">
+                        <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-1.5">
+                          Payment Receipt (buyer-uploaded)
+                        </p>
+                        <a
+                          href={(e as any).receiptUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 underline"
+                        >
+                          View uploaded receipt →
+                        </a>
+                      </div>
+                    ) : isAwaiting ? (
+                      <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700/30 rounded-xl p-3">
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                          No receipt attached — this order was submitted without a payment receipt.
+                        </p>
+                      </div>
+                    ) : null}
 
                     {/* Admin note */}
                     {isAwaiting && (
