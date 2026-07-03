@@ -252,9 +252,11 @@ export async function adminConfirmFunding(id: string, adminNote?: string): Promi
   try {
     const escrow = await getEscrowById(id);
     if (escrow) {
-      // Fetch buyer and seller emails from users table
-      const users = await d1Query<{ id: string; email: string; name: string }>(
-        "SELECT id, email, name FROM users WHERE id IN (?, ?)",
+      // Fetch buyer and seller info from users table (phone included so we
+      // can share the buyer's number with the seller now that payment is
+      // confirmed — never shared earlier, at initiation).
+      const users = await d1Query<{ id: string; email: string; name: string; phone: string | null }>(
+        "SELECT id, email, name, phone FROM users WHERE id IN (?, ?)",
         [escrow.buyerId, escrow.sellerId]
       );
       const buyer  = users.find((u) => u.id === escrow.buyerId);
@@ -268,6 +270,7 @@ export async function adminConfirmFunding(id: string, adminNote?: string): Promi
           listingTitle: escrow.listingTitle,
           amount:      escrow.amount,
           escrowId:    escrow.id,
+          buyerPhone:  buyer.phone ?? undefined,
         });
       }
     }
