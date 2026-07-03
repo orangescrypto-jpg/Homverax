@@ -303,38 +303,16 @@ export async function startInspection(id: string, inspectionDate: string): Promi
   await updateEscrowStatus(id, "inspection", { inspectionDate });
 }
 
+// ✅ FIX: this used to also call creditWalletOnRelease() and look up
+// buyer/seller emails directly from the client via d1Query()/d1Exec() —
+// both silently failed for regular users (admin-gated D1 proxy), so the
+// seller's wallet was never actually credited even though the escrow
+// showed "released". That work now happens server-side in the PATCH
+// handler at /api/escrow/[id]/route.ts, triggered whenever status
+// transitions to "released" — this function just needs to request that
+// transition.
 export async function confirmDelivery(id: string): Promise<void> {
   await updateEscrowStatus(id, "released", { releasedAt: new Date().toISOString() });
-
-  try {
-    const escrow = await getEscrowById(id);
-    if (escrow) {
-      // ── Credit seller wallet ─────────────────────────────────────────────
-      void creditWalletOnRelease(escrow.sellerId, escrow.amount, escrow.platformFee, escrow.id);
-
-      // ── Email trigger ────────────────────────────────────────────────────
-      const users = await d1Query<{ id: string; email: string; name: string }>(
-        "SELECT id, email, name FROM users WHERE id IN (?, ?)",
-        [escrow.buyerId, escrow.sellerId]
-      );
-      const buyer  = users.find((u) => u.id === escrow.buyerId);
-      const seller = users.find((u) => u.id === escrow.sellerId);
-      if (buyer && seller) {
-        void sendEscrowReleasedEmail({
-          sellerEmail:    seller.email,
-          sellerName:     seller.name,
-          buyerEmail:     buyer.email,
-          buyerName:      buyer.name,
-          listingTitle:   escrow.listingTitle,
-          sellerReceives: escrow.sellerReceives,
-          platformFee:    escrow.platformFee,
-          escrowId:       escrow.id,
-        });
-      }
-    }
-  } catch (err) {
-    console.warn("[escrow] confirmDelivery post-release error:", err);
-  }
 }
 
 export async function openDispute(id: string, reason: string): Promise<void> {
