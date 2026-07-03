@@ -28,7 +28,7 @@ interface MsgRow {
 
 interface UserRow {
   id: string;
-  full_name: string | null;
+  name: string | null;
   email: string | null;
   avatar_url: string | null;
 }
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
   if (allUserIds.length > 0) {
     const placeholders = allUserIds.map(() => "?").join(",");
     const userRows = await d1Query<UserRow>(
-      `SELECT id, full_name, email, avatar_url FROM users WHERE id IN (${placeholders})`,
+      `SELECT id, name, email, avatar_url FROM users WHERE id IN (${placeholders})`,
       allUserIds
     );
     for (const u of userRows) usersById.set(u.id, u);
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
     .map((agg) => {
       const participants = Array.from(agg.participantIds).map((id) => {
         const u = usersById.get(id);
-        return { id, name: u?.full_name ?? u?.email ?? "Unknown user", avatarUrl: u?.avatar_url ?? undefined };
+        return { id, name: u?.name ?? u?.email ?? "Unknown user", avatarUrl: u?.avatar_url ?? undefined };
       });
       const listing = agg.listingId ? listingsById.get(agg.listingId) : undefined;
       return {
