@@ -41,6 +41,9 @@ function rowToBooking(row: BookingRow): Booking {
   };
 }
 
+// ✅ FIX: was calling d1Exec()/d1Query() directly from client pages
+// (ListingDetailClient, all dashboard variants, bookings page). Silently
+// blocked for every non-staff user. Now routed through /api/bookings.
 export async function createBooking(params: {
   listingId: string;
   listingTitle: string;
@@ -50,36 +53,43 @@ export async function createBooking(params: {
   sellerId: string;
   message?: string;
 }): Promise<Booking> {
-  const id = newId();
-  const now = new Date().toISOString();
-  await d1Exec(
-    `INSERT INTO bookings
-       (id, listing_id, listing_title, listing_image, listing_price,
-        buyer_id, seller_id, status, message, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      id, params.listingId, params.listingTitle, params.listingImage, params.listingPrice,
-      params.buyerId, params.sellerId, "pending", params.message ?? null, now, now,
-    ]
-  );
-  const rows = await d1Query<BookingRow>("SELECT * FROM bookings WHERE id = ?", [id]);
-  return rowToBooking(rows[0]);
+  const res = await fetch("/api/bookings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      listingId: params.listingId,
+      listingTitle: params.listingTitle,
+      listingImage: params.listingImage,
+      listingPrice: params.listingPrice,
+      sellerId: params.sellerId,
+      message: params.message,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to create booking");
+  }
+  const { booking } = await res.json();
+  return booking as Booking;
 }
 
 export async function getMyBookings(userId: string): Promise<Booking[]> {
-  const rows = await d1Query<BookingRow>(
-    "SELECT * FROM bookings WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC",
-    [userId, userId]
-  );
-  // Deduplicate (shouldn't happen, but mirrors Firebase behavior)
-  const map = new Map<string, Booking>();
-  rows.forEach((r) => map.set(r.id, rowToBooking(r)));
-  return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const res = await fetch("/api/bookings", { cache: "no-store" });
+  if (!res.ok) return [];
+  const { bookings } = await res.json();
+  return (bookings ?? []) as Booking[];
 }
 
 export async function updateBookingStatus(id: string, status: Booking["status"]): Promise<void> {
-  const now = new Date().toISOString();
-  await d1Exec("UPDATE bookings SET status = ?, updated_at = ? WHERE id = ?", [status, now, id]);
+  const res = await fetch(`/api/bookings/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to update booking");
+  }
 }
 
 /**
