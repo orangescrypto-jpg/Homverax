@@ -131,12 +131,14 @@ function parseReviewRow(row: ReviewRow): Review {
   };
 }
 
+// ✅ FIX: was calling d1Query() directly from client dashboard code,
+// silently blocked for non-staff users. Now a public route (reviews about
+// an agent are meant to be publicly visible).
 export async function getUserReviews(userId: string, pageLimit = 20): Promise<Review[]> {
-  const rows = await d1Query<ReviewRow>(
-    "SELECT * FROM reviews WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
-    [userId, pageLimit]
-  );
-  return rows.map(parseReviewRow);
+  const res = await fetch(`/api/reviews?userId=${encodeURIComponent(userId)}`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const { reviews } = await res.json();
+  return (reviews ?? []) as Review[];
 }
 
 export async function getListingReviews(listingId: string): Promise<Review[]> {
@@ -148,17 +150,12 @@ export async function getListingReviews(listingId: string): Promise<Review[]> {
 }
 
 export async function getUserRatingSummary(userId: string): Promise<UserRatingsSummary> {
-  const rows = await d1Query<{ avg_rating: number; review_count: number }>(
-    "SELECT avg_rating, review_count FROM users WHERE id = ?",
-    [userId]
-  );
-  const user = rows[0];
-  return {
-    userId,
-    averageRating: user?.avg_rating ?? 0,
-    totalReviews: user?.review_count ?? 0,
-    distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-  };
+  const res = await fetch(`/api/reviews?userId=${encodeURIComponent(userId)}`, { cache: "no-store" });
+  if (!res.ok) {
+    return { userId, averageRating: 0, totalReviews: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+  }
+  const { summary } = await res.json();
+  return summary as UserRatingsSummary;
 }
 
 export async function canReview(escrowId: string, reviewerId: string): Promise<boolean> {
