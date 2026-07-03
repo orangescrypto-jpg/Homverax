@@ -1,6 +1,17 @@
 /**
  * services/notifications.ts — backed by Cloudflare D1.
- * Same function signatures as the Firestore version.
+ *
+ * ✅ FIX: getUserNotifications() / markNotificationRead() /
+ * markAllNotificationsRead() / getUnreadCount() used to call d1Query()/
+ * d1Exec() directly. Since lib/d1.ts routes *browser* D1 calls through the
+ * admin/moderator-only proxy at /api/admin/d1, any regular user opening
+ * their notifications bell got a silent 403 there — surfaced as an
+ * always-empty "No notifications" screen. Reads/writes now go through the
+ * public, user-scoped routes at /api/notifications (and /api/notifications/
+ * [id]) when running in the browser. createNotification() is left calling
+ * d1Exec() directly since it's only ever invoked from server-side code
+ * (e.g. badges.ts run as part of a server action), where d1Exec talks to
+ * Cloudflare directly rather than through the gated admin proxy.
  */
 
 import { d1Query, d1Exec, newId } from "@/lib/d1";
@@ -48,6 +59,12 @@ export async function getUserNotifications(
   userId: string,
   pageLimit = 30
 ): Promise<AppNotification[]> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/notifications?limit=${pageLimit}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const { notifications } = await res.json();
+    return (notifications ?? []) as AppNotification[];
+  }
   const rows = await d1Query<NotifRow>(
     "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
     [userId, pageLimit]
@@ -71,14 +88,26 @@ export async function createNotification(params: {
 }
 
 export async function markNotificationRead(notifId: string): Promise<void> {
+  if (typeof window !== "undefined") {
+    await fetch(`/api/notifications/${notifId}`, { method: "PATCH" });
+    return;
+  }
   await d1Exec("UPDATE notifications SET read = 1 WHERE id = ?", [notifId]);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
+  if (typeof window !== "undefined") {
+    await fetch("/api/notifications", { method: "PATCH" });
+    return;
+  }
   await d1Exec("UPDATE notifications SET read = 1 WHERE user_id = ?", [userId]);
 }
 
 export async function getUnreadCount(userId: string): Promise<number> {
+  if (typeof window !== "undefined") {
+    const notifs = await getUserNotifications(userId, 100);
+    return notifs.filter((n) => !n.isRead).length;
+  }
   const rows = await d1Query<{ cnt: number }>(
     "SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND read = 0",
     [userId]
