@@ -354,12 +354,12 @@ export default function AdminEscrowsPage() {
                         <p className="font-semibold text-foreground mt-0.5">{formatCurrency(e.amount)}</p>
                       </div>
                       <div>
-                        <p className="text-muted-foreground">Platform fee</p>
-                        <p className="font-semibold text-foreground mt-0.5">{formatCurrency(e.platformFee)}</p>
+                        <p className="text-muted-foreground">Buyer fee ({e.buyerServiceChargePercent}%)</p>
+                        <p className="font-semibold text-foreground mt-0.5">{formatCurrency(e.buyerServiceCharge)}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Total received</p>
-                        <p className="font-semibold text-foreground mt-0.5">{formatCurrency(e.amount + e.platformFee)}</p>
+                        <p className="font-semibold text-foreground mt-0.5">{formatCurrency(e.amount + e.buyerServiceCharge)}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Buyer ID</p>
@@ -378,7 +378,7 @@ export default function AdminEscrowsPage() {
                         </p>
                         <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                           Check your bank app for a transfer with this reference of{" "}
-                          <strong>{formatCurrency(e.amount + e.platformFee)}</strong>.
+                          <strong>{formatCurrency(e.amount + e.buyerServiceCharge)}</strong>.
                         </p>
                       </div>
                     )}
