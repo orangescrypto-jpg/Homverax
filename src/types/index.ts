@@ -185,7 +185,7 @@ export interface Message {
   content: string;
   readAt?: string;
   createdAt: string;
-  type?: "text" | "offer" | "offer_accepted" | "offer_rejected" | "offer_countered";
+  type?: "text" | "offer" | "offer_accepted" | "offer_rejected" | "offer_countered" | "listing_attached";
   offerData?: {
     offerId: string;
     proposedPrice: number;
