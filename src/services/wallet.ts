@@ -101,49 +101,44 @@ function rowToPayout(row: PayoutRow): PayoutRequest {
 }
 
 // ─── Bank details ─────────────────────────────────────────────────────────────
+// ✅ FIX: was calling d1Exec()/d1Query() directly from client dashboard
+// pages. Now routed through /api/wallet/mine, which returns bank details
+// alongside wallet + transactions in one call (see getOrCreateWallet below
+// for the primary read; this remains for standalone save calls).
 
 export async function saveBankDetails(userId: string, details: UserBankDetails): Promise<void> {
-  const now = new Date().toISOString();
-  await d1Exec(
-    "UPDATE users SET bank_name = ?, account_number = ?, account_name = ?, bank_code = ?, updated_at = ? WHERE id = ?",
-    [details.bankName, details.accountNumber, details.accountName, details.bankCode ?? null, now, userId]
-  );
+  const res = await fetch("/api/wallet/bank-details", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(details),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to save bank details");
+  }
 }
 
 export async function getBankDetails(userId: string): Promise<UserBankDetails | null> {
-  const rows = await d1Query<{ bank_name: string | null; account_number: string | null; account_name: string | null; bank_code: string | null }>(
-    "SELECT bank_name, account_number, account_name, bank_code FROM users WHERE id = ?",
-    [userId]
-  );
-  if (!rows.length || !rows[0].bank_name) return null;
-  return {
-    bankName: rows[0].bank_name,
-    accountNumber: rows[0].account_number ?? "",
-    accountName: rows[0].account_name ?? "",
-    bankCode: rows[0].bank_code ?? undefined,
-  };
+  const res = await fetch("/api/wallet/mine", { cache: "no-store" });
+  if (!res.ok) return null;
+  const { bankDetails } = await res.json();
+  return bankDetails;
 }
 
 // ─── Wallet ───────────────────────────────────────────────────────────────────
-
+// ✅ FIX: was calling d1Query()/d1Exec() directly from client dashboard
+// pages (AgentDashboard, WalletClient, ServiceProviderDashboard, referral
+// page). After the admin-gated D1 proxy was introduced, this silently
+// blocked every regular (non-staff) user from seeing their own wallet
+// balance — the "Wallet Balance ₦0" dashboard bug. Now a public,
+// signed-in-only route scoped to the caller's own wallet.
 export async function getOrCreateWallet(userId: string): Promise<SellerWallet> {
-  const rows = await d1Query<WalletRow>("SELECT * FROM wallets WHERE user_id = ?", [userId]);
-  if (rows.length) {
-    return {
-      userId,
-      balance: rows[0].balance,
-      pendingBalance: 0,
-      totalEarned: 0,
-      totalPlatformFeesDeducted: 0,
-      updatedAt: rows[0].updated_at,
-    };
+  const res = await fetch("/api/wallet/mine", { cache: "no-store" });
+  if (!res.ok) {
+    return { userId, balance: 0, pendingBalance: 0, totalEarned: 0, totalPlatformFeesDeducted: 0, updatedAt: new Date().toISOString() };
   }
-  const now = new Date().toISOString();
-  await d1Exec(
-    "INSERT INTO wallets (user_id, balance, updated_at) VALUES (?, 0, ?)",
-    [userId, now]
-  );
-  return { userId, balance: 0, pendingBalance: 0, totalEarned: 0, totalPlatformFeesDeducted: 0, updatedAt: now };
+  const { wallet } = await res.json();
+  return wallet as SellerWallet;
 }
 
 async function addWalletTransaction(params: {
@@ -162,19 +157,10 @@ async function addWalletTransaction(params: {
 }
 
 export async function getWalletTransactions(userId: string, pageLimit = 20): Promise<WalletTransaction[]> {
-  const rows = await d1Query<TxRow>(
-    "SELECT * FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-    [userId, pageLimit]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    userId: r.user_id,
-    type: r.type as WalletTransaction["type"],
-    amount: r.amount,
-    description: r.description,
-    reference: r.reference ?? undefined,
-    createdAt: r.created_at,
-  }));
+  const res = await fetch("/api/wallet/mine", { cache: "no-store" });
+  if (!res.ok) return [];
+  const { transactions } = await res.json();
+  return (transactions ?? []) as WalletTransaction[];
 }
 
 export async function holdFundsForSeller(sellerId: string, amount: number, escrowId: string): Promise<void> {
@@ -238,38 +224,15 @@ export async function requestPayout(
   accountNumber: string,
   accountName: string,
 ): Promise<void> {
-  const cfg = await getPlatformConfig();
-  const wallet = await getOrCreateWallet(userId);
-
-  if (amount <= 0) throw new Error("Invalid amount");
-  if (amount < cfg.minimumPayoutAmount) {
-    throw new Error(`Minimum payout is ₦${cfg.minimumPayoutAmount.toLocaleString()}`);
-  }
-  if (amount > wallet.balance) throw new Error("Insufficient balance");
-
-  // Save bank details
-  await saveBankDetails(userId, { bankName, accountNumber, accountName });
-
-  // Deduct from wallet immediately (held pending approval)
-  const now = new Date().toISOString();
-  await d1Exec(
-    "UPDATE wallets SET balance = balance - ?, updated_at = ? WHERE user_id = ?",
-    [amount, now, userId]
-  );
-
-  // Record wallet transaction
-  await addWalletTransaction({
-    userId, type: "payout", amount,
-    description: `Payout requested — ${bankName} ···${accountNumber.slice(-4)}`,
+  const res = await fetch("/api/wallet/mine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amount, bankName, accountNumber, accountName, userName }),
   });
-
-  // Insert into payouts table
-  const id = newId();
-  await d1Exec(
-    `INSERT INTO payouts (id, user_id, user_name, amount, bank_name, account_number, account_name, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-    [id, userId, userName, amount, bankName, accountNumber, accountName, now]
-  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to request payout");
+  }
 }
 
 export async function getAllPayoutRequests(
