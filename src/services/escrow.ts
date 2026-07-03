@@ -10,6 +10,7 @@ import {
   sendEscrowFundedEmail,
   sendEscrowReleasedEmail,
 } from "@/services/emailService";
+import { createNotification } from "@/services/notifications";
 import { creditWalletOnRelease } from "@/services/wallet";
 
 export type EscrowListingType = "sale" | "rent" | "shortlet" | "service";
@@ -273,6 +274,21 @@ export async function adminConfirmFunding(id: string, adminNote?: string): Promi
           buyerPhone:  buyer.phone ?? undefined,
         });
       }
+      // ── In-app notification: both parties ──────────────────────────────
+      void createNotification({
+        userId: escrow.buyerId,
+        type: "escrow",
+        title: "Payment confirmed",
+        body: `Your payment for "${escrow.listingTitle}" has been confirmed and is now held in escrow.`,
+        actionUrl: `/dashboard/escrow/${escrow.id}`,
+      });
+      void createNotification({
+        userId: escrow.sellerId,
+        type: "escrow",
+        title: "Funds received in escrow",
+        body: `Payment for "${escrow.listingTitle}" has been confirmed and is held in escrow.`,
+        actionUrl: `/dashboard/escrow/${escrow.id}`,
+      });
     }
   } catch (err) {
     console.warn("[escrow] adminConfirmFunding email error:", err);
@@ -327,6 +343,19 @@ export async function openDispute(id: string, reason: string): Promise<void> {
 
 export async function resolveDispute(id: string, refund: boolean): Promise<void> {
   await updateEscrowStatusAdmin(id, refund ? "refunded" : "resolved", { resolvedAt: new Date().toISOString() });
+
+  try {
+    const escrow = await getEscrowById(id);
+    if (escrow) {
+      const copy = refund
+        ? { title: "Dispute resolved — refunded", body: `The dispute on "${escrow.listingTitle}" was resolved with a refund to the buyer.` }
+        : { title: "Dispute resolved", body: `The dispute on "${escrow.listingTitle}" has been resolved.` };
+      void createNotification({ userId: escrow.buyerId, type: "escrow", title: copy.title, body: copy.body, actionUrl: `/dashboard/escrow/${escrow.id}` });
+      void createNotification({ userId: escrow.sellerId, type: "escrow", title: copy.title, body: copy.body, actionUrl: `/dashboard/escrow/${escrow.id}` });
+    }
+  } catch (err) {
+    console.warn("[escrow] resolveDispute notification error:", err);
+  }
 }
 
 export async function getAllEscrows(): Promise<EscrowTransaction[]> {
@@ -370,6 +399,21 @@ export async function releaseToSeller(id: string, adminNote: string, paymentRefe
           escrowId:       escrow.id,
         });
       }
+      // ── In-app notification: both parties ──────────────────────────────
+      void createNotification({
+        userId: escrow.sellerId,
+        type: "escrow",
+        title: "Funds released",
+        body: `Funds for "${escrow.listingTitle}" have been released to your wallet.`,
+        actionUrl: `/dashboard/escrow/${escrow.id}`,
+      });
+      void createNotification({
+        userId: escrow.buyerId,
+        type: "escrow",
+        title: "Transaction complete",
+        body: `The escrow for "${escrow.listingTitle}" has been released to the seller.`,
+        actionUrl: `/dashboard/escrow/${escrow.id}`,
+      });
     }
   } catch (err) {
     console.warn("[escrow] releaseToSeller post-release error:", err);
