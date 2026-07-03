@@ -93,7 +93,14 @@ async function requireParty(id: string) {
   if (!rows.length) return { error: "Not found" as const, status: 404 as const };
 
   const initialRow = rows[0];
-  if (initialRow.buyer_id !== user.id && initialRow.seller_id !== user.id) {
+  // ✅ FIX: this only ever allowed the buyer or seller of THIS specific
+  // escrow to update it — admins/moderators had no bypass at all. Every
+  // admin action on the Escrow Management page (Reject transfer, Confirm
+  // Payment, etc, when routed through this same PATCH) failed with a
+  // silent 403 for any admin who wasn't personally a party to that deal.
+  const role = (user.user_metadata?.role as string | undefined) ?? "";
+  const isStaff = role === "admin" || role === "moderator";
+  if (initialRow.buyer_id !== user.id && initialRow.seller_id !== user.id && !isStaff) {
     return { error: "Forbidden" as const, status: 403 as const };
   }
   const row = await maybeExpire(initialRow);
