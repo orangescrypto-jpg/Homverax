@@ -186,7 +186,7 @@ export default function HomeClient() {
       } else if (statCfg.key === "verifiedAgents") {
         value = stats.verifiedAgents > 0 ? `${stats.verifiedAgents.toLocaleString()}+` : "0";
       } else if (statCfg.key === "escrowTotal") {
-        value = stats.escrowTotal > 0 ? `₦${formatCurrencyShort(stats.escrowTotal)}` : "₦0";
+        value = stats.escrowTotal > 0 ? formatCurrencyShort(stats.escrowTotal) : "₦0";
       } else if (statCfg.key === "happyClients") {
         value = stats.totalUsers > 0 ? `${stats.totalUsers.toLocaleString()}+` : "0";
       }
