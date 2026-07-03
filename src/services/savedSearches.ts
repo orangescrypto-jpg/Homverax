@@ -34,25 +34,34 @@ function rowToSaved(row: SavedSearchRow): SavedSearch {
   };
 }
 
+// ✅ FIX: was calling d1Exec()/d1Query() directly from client dashboard
+// code, silently blocked for non-staff users. Now routed through
+// /api/saved-searches.
 export async function saveSearch(userId: string, name: string, filters: ListingFilters): Promise<SavedSearch> {
-  const id = newId();
-  const now = new Date().toISOString();
-  await d1Exec(
-    "INSERT INTO saved_searches (id, user_id, filters, name, created_at) VALUES (?,?,?,?,?)",
-    [id, userId, JSON.stringify(filters), name, now]
-  );
-  const rows = await d1Query<SavedSearchRow>("SELECT * FROM saved_searches WHERE id = ?", [id]);
-  return rowToSaved(rows[0]);
+  const res = await fetch("/api/saved-searches", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, filters }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to save search");
+  }
+  const { search } = await res.json();
+  return search as SavedSearch;
 }
 
 export async function getMySavedSearches(userId: string): Promise<SavedSearch[]> {
-  const rows = await d1Query<SavedSearchRow>(
-    "SELECT * FROM saved_searches WHERE user_id = ? ORDER BY created_at DESC",
-    [userId]
-  );
-  return rows.map(rowToSaved);
+  const res = await fetch("/api/saved-searches", { cache: "no-store" });
+  if (!res.ok) return [];
+  const { searches } = await res.json();
+  return (searches ?? []) as SavedSearch[];
 }
 
 export async function deleteSavedSearch(id: string): Promise<void> {
-  await d1Exec("DELETE FROM saved_searches WHERE id = ?", [id]);
+  const res = await fetch(`/api/saved-searches/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to delete saved search");
+  }
 }
