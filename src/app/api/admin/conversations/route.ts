@@ -1,22 +1,21 @@
 /**
- * app/api/admin/conversations/route.ts
- * GET /api/admin/conversations — ALL conversations on the platform.
- *
- * ✅ FIX: The admin dashboard had no Messages section at all. The only
- * existing route, /api/conversations, is scoped to `sender_id = ? OR
- * receiver_id = ?` for the signed-in user — by design, since it's meant
- * for regular users' own inbox. There was no equivalent for staff to see
- * every conversation on the platform, so an admin "Messages" list had
- * nothing to fetch from. This route mirrors the /api/admin/d1 auth
- * pattern (admin/moderator only) and aggregates every conversation from
- * the messages table, most-recent-first, with participant names resolved
- * from the users table for display.
+ * app/api/admin/conversations/[id]/messages/route.ts
+ * GET  /api/admin/conversations/[id]/messages — full thread for one
+ *      conversation, for staff review.
+ * POST /api/admin/conversations/[id]/messages — send a reply into the
+ *      thread as the signed-in admin/moderator, addressed to whichever
+ *      participant isn't staff. Mirrors the write to Supabase so the
+ *      user's own chat UI (which subscribes via subscribeToMessages)
+ *      receives it in realtime, same as a normal user-to-user message.
+ * Admin/moderator only (mirrors the auth pattern used by /api/admin/d1).
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { d1Query } from "@/lib/d1";
+import { d1Query, d1Exec, newId } from "@/lib/d1";
+import { createNotification } from "@/services/notifications";
 
 interface MsgRow {
+  id: string;
   conversation_id: string;
   sender_id: string;
   receiver_id: string;
@@ -33,125 +32,145 @@ interface UserRow {
   avatar_url: string | null;
 }
 
-interface ListingRow {
-  id: string;
-  title: string | null;
-  price: number | null;
-}
-
-function extractText(raw: string): string {
+function parseContent(raw: string): { text: string; type: string } {
   try {
-    const parsed = JSON.parse(raw) as { _text?: string };
-    if (typeof parsed._text === "string") return parsed._text;
+    const parsed = JSON.parse(raw) as { _type?: string; _text?: string };
+    if (parsed._type) return { text: parsed._text ?? "", type: parsed._type };
   } catch {
-    // plain text message
+    // plain text
   }
-  return raw;
+  return { text: raw, type: "text" };
 }
 
-export async function GET(request: NextRequest) {
+async function requireStaff() {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (authError || !user) return { error: "Unauthorized" as const, status: 401 as const };
   const role = (user.user_metadata?.role as string | undefined) ?? "";
-  if (role !== "admin" && role !== "moderator") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (role !== "admin" && role !== "moderator") return { error: "Forbidden" as const, status: 403 as const };
+  return { user };
+}
 
-  const { searchParams } = new URL(request.url);
-  const search = (searchParams.get("q") ?? "").trim().toLowerCase();
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: conversationId } = await params;
 
-  // Pull every message, most recent first, then collapse to one row per conversation.
+  const auth = await requireStaff();
+  if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   const rows = await d1Query<MsgRow>(
-    "SELECT conversation_id, sender_id, receiver_id, listing_id, content, read, created_at FROM messages ORDER BY created_at DESC",
-    []
+    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+    [conversationId]
   );
 
-  type ConvAgg = {
-    id: string;
-    participantIds: Set<string>;
-    lastMessage: string;
-    lastMessageAt: string;
-    listingId: string | null;
-    messageCount: number;
-    unreadCount: number;
-  };
-
-  const convMap = new Map<string, ConvAgg>();
-  for (const row of rows) {
-    let agg = convMap.get(row.conversation_id);
-    if (!agg) {
-      agg = {
-        id: row.conversation_id,
-        participantIds: new Set(),
-        lastMessage: extractText(row.content),
-        lastMessageAt: row.created_at,
-        listingId: row.listing_id,
-        messageCount: 0,
-        unreadCount: 0,
-      };
-      convMap.set(row.conversation_id, agg);
-    }
-    agg.participantIds.add(row.sender_id);
-    agg.participantIds.add(row.receiver_id);
-    agg.messageCount += 1;
-    if (row.read === 0) agg.unreadCount += 1;
-    if (!agg.listingId && row.listing_id) agg.listingId = row.listing_id;
-  }
-
-  const allUserIds = Array.from(new Set(rows.flatMap((r) => [r.sender_id, r.receiver_id])));
-  const allListingIds = Array.from(new Set(rows.map((r) => r.listing_id).filter(Boolean))) as string[];
-
+  const userIds = Array.from(new Set(rows.flatMap((r) => [r.sender_id, r.receiver_id])));
   const usersById = new Map<string, UserRow>();
-  if (allUserIds.length > 0) {
-    const placeholders = allUserIds.map(() => "?").join(",");
+  if (userIds.length > 0) {
+    const placeholders = userIds.map(() => "?").join(",");
     const userRows = await d1Query<UserRow>(
       `SELECT id, name, email, avatar_url FROM users WHERE id IN (${placeholders})`,
-      allUserIds
+      userIds
     );
     for (const u of userRows) usersById.set(u.id, u);
   }
 
-  const listingsById = new Map<string, ListingRow>();
-  if (allListingIds.length > 0) {
-    const placeholders = allListingIds.map(() => "?").join(",");
-    const listingRows = await d1Query<ListingRow>(
-      `SELECT id, title, price FROM listings WHERE id IN (${placeholders})`,
-      allListingIds
+  const messages = rows.map((row) => {
+    const { text, type } = parseContent(row.content);
+    const sender = usersById.get(row.sender_id);
+    return {
+      id: row.id,
+      conversationId: row.conversation_id,
+      senderId: row.sender_id,
+      senderName: sender?.name ?? sender?.email ?? "Unknown user",
+      content: text,
+      type,
+      readAt: row.read === 1 ? row.created_at : undefined,
+      createdAt: row.created_at,
+    };
+  });
+
+  return NextResponse.json({ messages });
+}
+
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: conversationId } = await params;
+
+  const auth = await requireStaff();
+  if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const { user } = auth;
+
+  const body = await request.json().catch(() => null);
+  const content = (body?.content ?? "").toString().trim();
+  if (!content) return NextResponse.json({ error: "Missing content" }, { status: 400 });
+
+  // Figure out who the reply goes to: the other participant in the
+  // existing thread. If receiverId is passed explicitly (e.g. the admin
+  // is starting a fresh thread), use that instead.
+  let receiverId: string | undefined = body?.receiverId;
+  let listingId: string | null = body?.listingId ?? null;
+  if (!receiverId) {
+    const existing = await d1Query<MsgRow>(
+      "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 1",
+      [conversationId]
     );
-    for (const l of listingRows) listingsById.set(l.id, l);
+    if (existing.length === 0) {
+      return NextResponse.json({ error: "receiverId is required for a new conversation" }, { status: 400 });
+    }
+    const first = existing[0];
+    receiverId = first.sender_id === user.id ? first.receiver_id : first.sender_id;
+    listingId = listingId ?? first.listing_id;
   }
 
-  let conversations = Array.from(convMap.values())
-    .sort((a, b) => (a.lastMessageAt < b.lastMessageAt ? 1 : -1))
-    .map((agg) => {
-      const participants = Array.from(agg.participantIds).map((id) => {
-        const u = usersById.get(id);
-        return { id, name: u?.name ?? u?.email ?? "Unknown user", avatarUrl: u?.avatar_url ?? undefined };
-      });
-      const listing = agg.listingId ? listingsById.get(agg.listingId) : undefined;
-      return {
-        id: agg.id,
-        participants,
-        listingId: agg.listingId ?? undefined,
-        listingTitle: listing?.title ?? undefined,
-        listingPrice: listing?.price ?? undefined,
-        lastMessage: agg.lastMessage,
-        lastMessageAt: agg.lastMessageAt,
-        messageCount: agg.messageCount,
-        unreadCount: agg.unreadCount,
-      };
+  const msgId = newId();
+  const now = new Date().toISOString();
+  await d1Exec(
+    "INSERT INTO messages (id, conversation_id, sender_id, receiver_id, listing_id, content, read, created_at) VALUES (?,?,?,?,?,?,?,?)",
+    [msgId, conversationId, user.id, receiverId, listingId, content, 0, now]
+  );
+
+  // Mirror to Supabase so the recipient's realtime subscription (see
+  // subscribeToMessages in services/messages.ts) picks this up live,
+  // exactly like a normal user-to-user message would.
+  try {
+    const supabase = await createClient();
+    const { error: mirrorError } = await supabase.from("messages").insert({
+      id: msgId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content,
+      created_at: now,
     });
-
-  if (search) {
-    conversations = conversations.filter((c) =>
-      c.participants.some((p) => p.name.toLowerCase().includes(search)) ||
-      (c.listingTitle ?? "").toLowerCase().includes(search) ||
-      c.lastMessage.toLowerCase().includes(search)
-    );
+    if (mirrorError) {
+      console.warn("[admin/conversations/messages POST] Supabase mirror error:", mirrorError.message);
+    }
+  } catch (err) {
+    console.warn("[admin/conversations/messages POST] Supabase mirror failed:", err);
   }
 
-  return NextResponse.json({ conversations });
+  // In-app notification for the recipient — fire-and-forget.
+  try {
+    let preview = content;
+    if (preview.length > 120) preview = preview.slice(0, 117) + "…";
+    void createNotification({
+      userId: receiverId,
+      type: "message",
+      title: "New message from HomveraX Support",
+      body: preview,
+      actionUrl: `/dashboard/messages/${conversationId}`,
+    });
+  } catch (err) {
+    console.warn("[admin/conversations/messages POST] notification error:", err);
+  }
+
+  return NextResponse.json({
+    message: {
+      id: msgId,
+      conversationId,
+      senderId: user.id,
+      senderName: "HomveraX Support",
+      content,
+      type: "text",
+      readAt: undefined,
+      createdAt: now,
+    },
+  });
 }
