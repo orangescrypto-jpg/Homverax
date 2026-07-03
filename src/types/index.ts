@@ -128,6 +128,9 @@ export interface EscrowTransaction {
   status: EscrowStatus;
   role: "buyer" | "seller";
   paymentReference?: string;
+  transferReference?: string;
+  transferSubmittedAt?: string;
+  receiptUrl?: string;
   depositPaidAt?: string;
   fundsHeldAt?: string;
   inspectionDate?: string;
