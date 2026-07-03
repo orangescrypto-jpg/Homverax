@@ -16,6 +16,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { d1Query, d1Exec } from "@/lib/d1";
+import { createNotification } from "@/services/notifications";
 import type { EscrowTransaction, EscrowStatus } from "@/types";
 
 interface EscrowRow {
@@ -143,6 +144,65 @@ export async function PATCH(
     try { meta = JSON.parse(result.row.meta || "{}"); } catch {}
     const merged = { ...meta, ...body.extra };
     await d1Exec("UPDATE escrows SET meta = ?, updated_at = ? WHERE id = ?", [JSON.stringify(merged), now, id]);
+  }
+
+  // ── In-app notification for the other party ───────────────────────────────
+  // Fire-and-forget — a failed notification must never block the status
+  // update itself. Notifies whichever side didn't just perform the action
+  // (buyer submits transfer → notify seller; seller/admin flags an issue →
+  // notify buyer; either side opens a dispute → notify the other side).
+  try {
+    let listingTitle = "";
+    try { listingTitle = (JSON.parse(result.row.meta || "{}").listingTitle as string) ?? ""; } catch {}
+    const otherPartyId =
+      result.userId === result.row.buyer_id ? result.row.seller_id : result.row.buyer_id;
+
+    const NOTIF_COPY: Partial<Record<EscrowStatus, { title: string; body: string }>> = {
+      awaiting_confirmation: {
+        title: "Transfer submitted",
+        body: `The buyer has submitted proof of payment for "${listingTitle}". Awaiting confirmation.`,
+      },
+      held: {
+        title: "Funds held in escrow",
+        body: `Funds for "${listingTitle}" are now held securely in escrow.`,
+      },
+      inspection: {
+        title: "Inspection period started",
+        body: `The inspection period for "${listingTitle}" has begun.`,
+      },
+      released: {
+        title: "Funds released",
+        body: `Escrow funds for "${listingTitle}" have been released.`,
+      },
+      disputed: {
+        title: "Dispute opened",
+        body: `A dispute has been opened on "${listingTitle}". Our team will review it shortly.`,
+      },
+      resolved: {
+        title: "Dispute resolved",
+        body: `The dispute on "${listingTitle}" has been resolved.`,
+      },
+      refunded: {
+        title: "Escrow refunded",
+        body: `The escrow for "${listingTitle}" has been refunded.`,
+      },
+      cancelled: {
+        title: "Order cancelled",
+        body: `The order for "${listingTitle}" was cancelled.`,
+      },
+    };
+    const copy = NOTIF_COPY[body.status as EscrowStatus];
+    if (copy && otherPartyId) {
+      void createNotification({
+        userId: otherPartyId,
+        type: "escrow",
+        title: copy.title,
+        body: copy.body,
+        actionUrl: `/dashboard/escrow/${id}`,
+      });
+    }
+  } catch (err) {
+    console.warn("[escrow PATCH] notification error:", err);
   }
 
   const rows = await d1Query<EscrowRow>("SELECT * FROM escrows WHERE id = ?", [id]);
