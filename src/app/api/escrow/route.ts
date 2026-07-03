@@ -20,6 +20,7 @@ import {
   calcSellerPlatformFee,
 } from "@/services/platformSettings";
 import { sendEscrowInitiatedEmail } from "@/services/emailService";
+import { createNotification } from "@/services/notifications";
 import type { EscrowTransaction, EscrowStatus } from "@/types";
 
 interface EscrowRow {
@@ -168,6 +169,13 @@ export async function POST(request: NextRequest) {
         buyerName: buyerRow?.name ?? "A buyer",
         listingTitle: body.listingTitle ?? "",
         escrowId: id,
+      });
+      void createNotification({
+        userId: body.sellerId,
+        type: "escrow",
+        title: "A buyer wants to purchase",
+        body: `${buyerRow?.name ?? "A buyer"} has started a purchase for "${body.listingTitle ?? "your listing"}". Payment is pending.`,
+        actionUrl: `/dashboard/escrow/${id}`,
       });
     }
   } catch (err) {
