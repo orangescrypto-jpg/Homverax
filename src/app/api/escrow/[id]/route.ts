@@ -17,6 +17,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { d1Query, d1Exec } from "@/lib/d1";
 import { createNotification } from "@/services/notifications";
+import { creditWalletOnRelease } from "@/services/wallet";
+import { sendEscrowReleasedEmail } from "@/services/emailService";
 import type { EscrowTransaction, EscrowStatus } from "@/types";
 
 interface EscrowRow {
@@ -137,6 +139,7 @@ export async function PATCH(
   }
 
   const now = new Date().toISOString();
+  const wasAlreadyReleased = result.row.status === "released";
   await d1Exec("UPDATE escrows SET status = ?, updated_at = ? WHERE id = ?", [body.status, now, id]);
 
   if (body.extra && typeof body.extra === "object") {
@@ -144,6 +147,49 @@ export async function PATCH(
     try { meta = JSON.parse(result.row.meta || "{}"); } catch {}
     const merged = { ...meta, ...body.extra };
     await d1Exec("UPDATE escrows SET meta = ?, updated_at = ? WHERE id = ?", [JSON.stringify(merged), now, id]);
+  }
+
+  // ── Credit seller wallet + send released email (buyer-triggered path) ────
+  // ✅ FIX: confirmDelivery() in services/escrow.ts used to call
+  // creditWalletOnRelease() directly from the client (buyer clicking
+  // "Confirm Delivery"). Since that function writes to D1 via d1Exec(),
+  // and services/escrow.ts is a client-side module, the credit silently
+  // failed for every regular buyer — the seller's wallet balance never
+  // moved even though the escrow showed "released". Moving it here means
+  // it always runs server-side, regardless of who triggers the release.
+  // Guarded by wasAlreadyReleased so a repeat PATCH (e.g. a retried
+  // request) can never double-credit the wallet.
+  if (body.status === "released" && !wasAlreadyReleased) {
+    try {
+      let meta: Record<string, unknown> = {};
+      try { meta = JSON.parse(result.row.meta || "{}"); } catch {}
+      const listingTitle = (meta.listingTitle as string) ?? "";
+      const platformFee = (meta.platformFee as number) ?? 0;
+      const sellerReceives = (meta.sellerReceives as number) ?? result.row.amount;
+
+      await creditWalletOnRelease(result.row.seller_id, result.row.amount, platformFee, id);
+
+      const users = await d1Query<{ id: string; email: string; name: string }>(
+        "SELECT id, email, name FROM users WHERE id IN (?, ?)",
+        [result.row.buyer_id, result.row.seller_id]
+      );
+      const buyer = users.find((u) => u.id === result.row.buyer_id);
+      const seller = users.find((u) => u.id === result.row.seller_id);
+      if (buyer && seller) {
+        void sendEscrowReleasedEmail({
+          sellerEmail: seller.email,
+          sellerName: seller.name,
+          buyerEmail: buyer.email,
+          buyerName: buyer.name,
+          listingTitle,
+          sellerReceives,
+          platformFee,
+          escrowId: id,
+        });
+      }
+    } catch (err) {
+      console.warn("[escrow PATCH] wallet credit / released email error:", err);
+    }
   }
 
   // ── In-app notification for the other party ───────────────────────────────
