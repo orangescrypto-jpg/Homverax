@@ -103,7 +103,9 @@ export type EscrowStatus =
   | "released"
   | "disputed"
   | "resolved"
-  | "refunded";
+  | "refunded"
+  | "cancelled"
+  | "expired";
 
 export interface EscrowTransaction {
   id: string;
