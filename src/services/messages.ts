@@ -68,22 +68,16 @@ async function mirrorToSupabase(params: {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+// ✅ FIX: was calling d1Query() directly from client dashboard code,
+// silently blocked for non-staff users. Now routed through
+// /api/conversations. (Other functions in this file — sendMessage,
+// markConversationRead, getConversationMessages, offer-in-chat — still
+// need the same fix; not covered here.)
 export async function getMyConversations(userId: string): Promise<Conversation[]> {
-  const rows = await d1Query<MsgRow>(
-    "SELECT * FROM messages WHERE sender_id = ? OR receiver_id = ? GROUP BY conversation_id ORDER BY created_at DESC",
-    [userId, userId]
-  );
-  const convMap = new Map<string, Conversation>();
-  for (const row of rows) {
-    const convId = row.conversation_id;
-    if (!convMap.has(convId)) {
-      convMap.set(convId, {
-        id: convId, participants: [], lastMessage: row.content, lastMessageAt: row.created_at,
-        unreadCount: 0, unreadFor: null,
-      });
-    }
-  }
-  return Array.from(convMap.values());
+  const res = await fetch("/api/conversations", { cache: "no-store" });
+  if (!res.ok) return [];
+  const { conversations } = await res.json();
+  return (conversations ?? []) as Conversation[];
 }
 
 export async function startConversation(
