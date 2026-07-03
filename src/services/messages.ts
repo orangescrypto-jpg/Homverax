@@ -6,7 +6,7 @@
  * On every sendMessage(), we write to D1 first, then fire-and-forget a
  * mirror insert into Supabase so Realtime subscribers receive the event.
  */
-import { d1Query, d1Exec, newId } from "@/lib/d1";
+import { newId } from "@/lib/d1";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation, Message } from "@/types";
 import { createOffer, acceptOffer, rejectOffer, counterOffer } from "@/services/offers";
@@ -80,6 +80,11 @@ export async function getMyConversations(userId: string): Promise<Conversation[]
   return (conversations ?? []) as Conversation[];
 }
 
+// ✅ FIX: was calling d1Query() directly from the client to check for an
+// existing conversation — silently blocked for non-staff users, so it
+// always fell through to "create new" even when a thread already existed.
+// Now checks via /api/conversations/find, a public route scoped to the
+// signed-in user's own participant pairs.
 export async function startConversation(
   participants: Conversation["participants"],
   listingId?: string,
@@ -89,17 +94,23 @@ export async function startConversation(
 ): Promise<Conversation> {
   if (participants.length >= 2) {
     const [p1, p2] = participants;
-    const rows = await d1Query<MsgRow>(
-      "SELECT conversation_id FROM messages WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)) AND listing_id IS ? LIMIT 1",
-      [p1.id, p2.id, p2.id, p1.id, listingId ?? null]
-    );
-    if (rows.length) {
-      const convId = rows[0].conversation_id;
-      return {
-        id: convId, participants, listingId, listingTitle, listingPrice: listingPrice ?? 0,
-        sellerId: sellerId ?? null, lastMessage: "", lastMessageAt: new Date().toISOString(),
-        unreadCount: 0, unreadFor: null,
-      };
+    try {
+      const res = await fetch(
+        `/api/conversations/find?a=${encodeURIComponent(p1.id)}&b=${encodeURIComponent(p2.id)}&listingId=${encodeURIComponent(listingId ?? "")}`,
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const { conversationId } = await res.json();
+        if (conversationId) {
+          return {
+            id: conversationId, participants, listingId, listingTitle, listingPrice: listingPrice ?? 0,
+            sellerId: sellerId ?? null, lastMessage: "", lastMessageAt: new Date().toISOString(),
+            unreadCount: 0, unreadFor: null,
+          };
+        }
+      }
+    } catch {
+      // fall through to creating a new conversation id below
     }
   }
 
@@ -113,10 +124,12 @@ export async function startConversation(
 
 /**
  * Send a message.
- * 1. Writes to D1 (source of truth, full data).
- * 2. Mirrors a lightweight row to Supabase Postgres (fire-and-forget).
- *    This triggers Supabase Realtime so the recipient sees the message
- *    instantly without a page refresh.
+ * ✅ FIX: used to call d1Exec() directly from the client — silently
+ * blocked for non-staff users (the admin-gated D1 proxy), meaning no
+ * regular user could send a chat message at all. Now goes through
+ * POST /api/conversations/[id]/messages, which does the D1 write
+ * server-side and fires a recipient notification.
+ * Supabase mirror (for Realtime) still happens client-side, unchanged.
  */
 export async function sendMessage(
   conversationId: string,
@@ -125,23 +138,34 @@ export async function sendMessage(
   content: string,
   listingId?: string,
 ): Promise<Message> {
-  const id = newId();
-  const now = new Date().toISOString();
+  const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ receiverId, content, listingId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? "Failed to send message");
+  }
+  const { message } = await res.json();
 
-  // 1. Write to D1 — always awaited, never skipped
-  await d1Exec(
-    "INSERT INTO messages (id, conversation_id, sender_id, receiver_id, listing_id, content, read, created_at) VALUES (?,?,?,?,?,?,?,?)",
-    [id, conversationId, senderId, receiverId, listingId ?? null, content, 0, now]
-  );
+  // Mirror to Supabase — fire-and-forget, failure is non-fatal
+  void mirrorToSupabase({
+    id: message.id,
+    conversation_id: conversationId,
+    sender_id: senderId,
+    content,
+    created_at: message.createdAt,
+  });
 
-  // 2. Mirror to Supabase — fire-and-forget, failure is non-fatal
-  void mirrorToSupabase({ id, conversation_id: conversationId, sender_id: senderId, content, created_at: now });
-
-  return { id, conversationId, senderId, content, createdAt: now, type: "text", offerData: null };
+  return message as Message;
 }
 
+// ✅ FIX: was calling d1Exec() directly from the client — silently blocked
+// for non-staff users. Now routed through the same
+// /api/conversations/[id]/messages route (PATCH).
 export async function markConversationRead(conversationId: string, userId: string): Promise<void> {
-  await d1Exec("UPDATE messages SET read = 1 WHERE conversation_id = ? AND receiver_id = ?", [conversationId, userId]);
+  await fetch(`/api/conversations/${conversationId}/messages`, { method: "PATCH" });
 }
 
 export function subscribeToMessages(conversationId: string, callback: (msg: Message) => void): () => void {
@@ -172,12 +196,15 @@ export function subscribeToConversations(userId: string, callback: (convs: Conve
   return () => { supabase.removeChannel(channel); };
 }
 
+// ✅ FIX: was calling d1Query() directly from the client — silently
+// blocked for non-staff users, so opening a chat thread always returned
+// an empty message list. Now routed through
+// GET /api/conversations/[id]/messages.
 export async function getConversationMessages(conversationId: string, pageLimit = 50): Promise<Message[]> {
-  const rows = await d1Query<MsgRow>(
-    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?",
-    [conversationId, pageLimit]
-  );
-  return rows.map(rowToMessage);
+  const res = await fetch(`/api/conversations/${conversationId}/messages`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const { messages } = await res.json();
+  return ((messages ?? []) as Message[]).slice(-pageLimit);
 }
 
 /**
