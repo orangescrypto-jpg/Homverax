@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   MessageSquare, Send, Shield, ChevronLeft,
   CheckCheck, Tag, CheckCircle2, X, RefreshCw,
-  Loader2, ArrowRight, Home, ExternalLink,
+  Loader2, ArrowRight, Home, ExternalLink, Link2, Search,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -21,11 +21,13 @@ import {
   rejectOfferFromChat, counterOfferFromChat,
   getMyConversations,
   getConversationMessages,
+  attachListingToConversation,
 } from "@/services/messages";
+import { getMyListings } from "@/services/listings";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { Conversation, Message } from "@/types";
+import type { Conversation, Message, PropertyListing } from "@/types";
 
 // ─── Offer card component ─────────────────────────────────────────────────────
 
@@ -284,6 +286,111 @@ function ConversationListingCard({ conv }: { conv: { listingId?: string; listing
   );
 }
 
+// ─── Attach listing modal (buyer picks from THIS seller's own listings) ───────
+
+function AttachListingModal({
+  sellerId, sellerName, onAttach, onClose,
+}: {
+  sellerId: string;
+  sellerName: string;
+  onAttach: (listing: PropertyListing) => void;
+  onClose: () => void;
+}) {
+  const [listings, setListings] = useState<PropertyListing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [attachingId, setAttachingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMyListings(sellerId)
+      .then((data) => { if (!cancelled) setListings(data ?? []); })
+      .catch(() => { if (!cancelled) setListings([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [sellerId]);
+
+  const filtered = listings.filter((l) =>
+    l.title.toLowerCase().includes(query.toLowerCase()) ||
+    l.location?.address?.toLowerCase().includes(query.toLowerCase()) ||
+    l.location?.lga?.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const handlePick = async (listing: PropertyListing) => {
+    setAttachingId(listing.id);
+    await onAttach(listing);
+    setAttachingId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-sm shadow-2xl max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 pb-3 shrink-0">
+          <div>
+            <h3 className="font-semibold text-foreground">Attach a Listing</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Only showing {sellerName}&apos;s listings
+            </p>
+          </div>
+          <button onClick={onClose}><X className="w-4 h-4 text-muted-foreground" /></button>
+        </div>
+
+        <div className="px-5 pb-3 shrink-0">
+          <div className="relative">
+            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              className="pl-9"
+              placeholder="Search by title or location…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-2">
+          {loading ? (
+            [...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton h-16 w-full rounded-xl" />
+            ))
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Home className="w-8 h-8 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">
+                {listings.length === 0 ? `${sellerName} has no listings yet` : "No listings match your search"}
+              </p>
+            </div>
+          ) : (
+            filtered.map((listing) => (
+              <button
+                key={listing.id}
+                disabled={attachingId !== null}
+                onClick={() => handlePick(listing)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left disabled:opacity-60"
+              >
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                  {listing.images?.[0] ? (
+                    <Image src={listing.images[0]} alt={listing.title} width={48} height={48} className="w-full h-full object-cover" />
+                  ) : (
+                    <Home className="w-5 h-5 text-primary" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{listing.title}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {listing.location?.lga}, {listing.location?.state}
+                  </p>
+                  <p className="text-xs text-primary font-medium">{formatCurrency(listing.price)}</p>
+                </div>
+                {attachingId === listing.id && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main messages page ───────────────────────────────────────────────────────
 
 export default function MessagesPage() {
@@ -303,6 +410,8 @@ export default function MessagesPage() {
   const [offerSystemEnabled, setOfferSystemEnabled] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [counterModal, setCounterModal] = useState<{ offerId: string; price: number } | null>(null);
+  const [showAttachListingModal, setShowAttachListingModal] = useState(false);
+  const [attachingListing, setAttachingListing] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -416,6 +525,31 @@ export default function MessagesPage() {
 
   // ── Offer action handlers ───────────────────────────────────────────────────
 
+  // ✅ Buyer picks a listing from the seller's own catalogue to attach to
+  // this conversation (for chats that didn't start from a listing page).
+  const handleAttachListing = async (listing: PropertyListing) => {
+    if (!user || !activeConvId || !otherParticipant) return;
+    setAttachingListing(true);
+    try {
+      await attachListingToConversation(
+        activeConvId, user.id, otherParticipant.id, listing.id, listing.title,
+      );
+      // Refresh so the listing card + Make Offer button appear immediately
+      const [convs, msgs] = await Promise.all([
+        getMyConversations(user.id),
+        getConversationMessages(activeConvId),
+      ]);
+      setConversations(convs);
+      setMessages(msgs);
+      setShowAttachListingModal(false);
+      toast.success(`Attached "${listing.title}" to this chat`);
+    } catch {
+      toast.error("Failed to attach listing");
+    } finally {
+      setAttachingListing(false);
+    }
+  };
+
   const handleSendOffer = async (price: number, note: string) => {
     if (!user || !activeConvId || !activeConv) return;
     const other = activeConv.participants.find(p => p.id !== user.id);
@@ -489,6 +623,16 @@ export default function MessagesPage() {
           listingPrice={listingPrice}
           onSend={handleSendOffer}
           onClose={() => setShowOfferModal(false)}
+        />
+      )}
+
+      {/* Attach listing modal — buyer picks from seller's own listings only */}
+      {showAttachListingModal && otherParticipant && (
+        <AttachListingModal
+          sellerId={otherParticipant.id}
+          sellerName={otherParticipant.name}
+          onAttach={handleAttachListing}
+          onClose={() => !attachingListing && setShowAttachListingModal(false)}
         />
       )}
 
@@ -608,6 +752,17 @@ export default function MessagesPage() {
                   <Button size="sm" variant="outline" className="gap-1.5 text-xs shrink-0"
                     onClick={() => setShowOfferModal(true)}>
                     <Tag className="w-3.5 h-3.5" /> Make Offer
+                  </Button>
+                )}
+                {/* No listing linked to this chat yet. Role (buyer/seller) is
+                    unknown until a listing is attached, so either side may
+                    initiate — but the search is always scoped to the OTHER
+                    participant's own listings, so you can only link a
+                    listing that person actually owns. */}
+                {offerSystemEnabled && !activeConv.listingId && otherParticipant && (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs shrink-0"
+                    onClick={() => setShowAttachListingModal(true)}>
+                    <Link2 className="w-3.5 h-3.5" /> Link Listing
                   </Button>
                 )}
               </div>
