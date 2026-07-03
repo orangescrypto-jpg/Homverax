@@ -63,6 +63,15 @@ function rowToEscrow(row: EscrowRow, userId?: string): EscrowTransaction {
     status: row.status as EscrowStatus,
     role: userId === row.buyer_id ? "buyer" : "seller",
     paymentReference: (meta.paymentReference as string) ?? undefined,
+    // ✅ FIX: these two were missing from this rowToEscrow entirely, so the
+    // admin escrow list (getAllEscrows, used by /admin/escrows) never saw
+    // the buyer's transfer reference or uploaded receipt — even though
+    // both were saved correctly to meta by submitTransferProof(). Admin
+    // always displayed "No receipt attached" regardless of what the buyer
+    // actually submitted.
+    transferReference: (meta.transferReference as string) ?? undefined,
+    transferSubmittedAt: (meta.transferSubmittedAt as string) ?? undefined,
+    receiptUrl: (meta.receiptUrl as string) ?? undefined,
     depositPaidAt: (meta.depositPaidAt as string) ?? undefined,
     fundsHeldAt: (meta.fundsHeldAt as string) ?? undefined,
     inspectionDate: (meta.inspectionDate as string) ?? undefined,
