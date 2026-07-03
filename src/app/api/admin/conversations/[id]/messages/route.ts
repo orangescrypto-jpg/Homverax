@@ -21,7 +21,7 @@ interface MsgRow {
 
 interface UserRow {
   id: string;
-  full_name: string | null;
+  name: string | null;
   email: string | null;
   avatar_url: string | null;
 }
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (userIds.length > 0) {
     const placeholders = userIds.map(() => "?").join(",");
     const userRows = await d1Query<UserRow>(
-      `SELECT id, full_name, email, avatar_url FROM users WHERE id IN (${placeholders})`,
+      `SELECT id, name, email, avatar_url FROM users WHERE id IN (${placeholders})`,
       userIds
     );
     for (const u of userRows) usersById.set(u.id, u);
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       id: row.id,
       conversationId: row.conversation_id,
       senderId: row.sender_id,
-      senderName: sender?.full_name ?? sender?.email ?? "Unknown user",
+      senderName: sender?.name ?? sender?.email ?? "Unknown user",
       content: text,
       type,
       readAt: row.read === 1 ? row.created_at : undefined,
