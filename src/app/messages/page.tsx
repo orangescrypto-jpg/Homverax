@@ -19,6 +19,8 @@ import {
   subscribeToConversations, markConversationRead,
   sendOfferMessage, acceptOfferFromChat,
   rejectOfferFromChat, counterOfferFromChat,
+  getMyConversations,
+  getConversationMessages,
 } from "@/services/messages";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
@@ -309,6 +311,27 @@ export default function MessagesPage() {
       setOfferSystemEnabled(cfg.features.enableOfferSystem !== false);
     }).catch(() => setOfferSystemEnabled(false));
 
+    // ✅ FIX: subscribeToConversations() only ever fires on a Supabase
+    // Realtime event — it never did an initial fetch, so the sidebar sat
+    // on loading skeletons forever unless a new message happened to
+    // arrive while the page was already open. Fetch once immediately on
+    // mount, then let the realtime subscription handle live updates.
+    let cancelled = false;
+    getMyConversations(user.id)
+      .then((convs) => {
+        if (cancelled) return;
+        setConversations(convs);
+        setConvsLoading(false);
+
+        const urlConvId = searchParams.get("conv");
+        if (urlConvId && convs.find((c) => c.id === urlConvId)) {
+          setActiveConvId(urlConvId);
+        } else if (convs.length > 0) {
+          setActiveConvId((prev) => prev ?? convs[0].id);
+        }
+      })
+      .catch(() => { if (!cancelled) setConvsLoading(false); });
+
     const unsub = subscribeToConversations(user.id, (convs) => {
       setConversations(convs);
       setConvsLoading(false);
@@ -321,13 +344,26 @@ export default function MessagesPage() {
         setActiveConvId(convs[0].id);
       }
     });
-    return unsub;
+    return () => { cancelled = true; unsub(); };
   }, [isAuthenticated, user]);
 
   useEffect(() => {
     if (!activeConvId) return;
-    const unsub = subscribeToMessages(activeConvId, (msg: Message) => setMessages((prev) => [...prev, msg]));
-    return unsub;
+    // ✅ FIX: subscribeToMessages() only fires on a new Realtime event —
+    // it never loaded the conversation's existing history, so opening a
+    // thread always started empty ("No messages yet") even when prior
+    // messages existed. Fetch the history once when the thread is opened,
+    // then let the realtime subscription append any new messages.
+    let cancelled = false;
+    setMessages([]);
+    getConversationMessages(activeConvId).then((msgs) => {
+      if (!cancelled) setMessages(msgs);
+    }).catch(() => {});
+
+    const unsub = subscribeToMessages(activeConvId, (msg: Message) =>
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
+    );
+    return () => { cancelled = true; unsub(); };
   }, [activeConvId]);
 
   useEffect(() => {
