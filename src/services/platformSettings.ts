@@ -69,6 +69,7 @@ export interface EmailConfig {
   provider: "resend" | "none";
   fromName: string;
   fromEmail: string;
+  onEscrowInitiated: boolean;
   onEscrowFunded: boolean;
   onEscrowReleased: boolean;
   onBookingConfirmed: boolean;
@@ -283,6 +284,7 @@ export const DEFAULT_EMAIL_CONFIG: EmailConfig = {
   provider: "resend",
   fromName: "HomveraX",
   fromEmail: "noreply@homverax.com",
+  onEscrowInitiated: true,
   onEscrowFunded: true,
   onEscrowReleased: true,
   onBookingConfirmed: true,
