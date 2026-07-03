@@ -241,10 +241,25 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<vo
   }
 }
 
+// ✅ FIX: called directly from client Settings pages — see
+// app/api/auth/update-profile/route.ts for why this now goes through a
+// public, self-only API route instead of hitting d1Exec() from the browser.
 export async function updateUserProfile(
   userId: string,
   updates: Partial<Pick<HomveraxUser, "name" | "firstName" | "lastName" | "phone" | "avatarUrl">>
 ): Promise<void> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/auth/update-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: "profile", updates }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? "Failed to update profile");
+    }
+    return;
+  }
   const now = new Date().toISOString();
   const fields: string[] = ["updated_at = ?"];
   const values: unknown[] = [now];
@@ -265,6 +280,18 @@ export async function updateUserBankDetails(
   accountNumber: string,
   accountName: string
 ): Promise<void> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/auth/update-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: "bank", bankName, accountNumber, accountName }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? "Failed to update bank details");
+    }
+    return;
+  }
   const now = new Date().toISOString();
   await d1Exec(
     "UPDATE users SET bank_name = ?, account_number = ?, account_name = ?, updated_at = ? WHERE id = ?",
@@ -276,6 +303,18 @@ export async function updateUserNotifPrefs(
   userId: string,
   notifPrefs: Record<string, boolean>
 ): Promise<void> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/auth/update-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: "notifPrefs", notifPrefs }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? "Failed to update notification preferences");
+    }
+    return;
+  }
   const now = new Date().toISOString();
   await d1Exec(
     "UPDATE users SET notif_prefs = ?, updated_at = ? WHERE id = ?",
@@ -287,6 +326,18 @@ export async function updateUserPrivacyPrefs(
   userId: string,
   privacyPrefs: Record<string, boolean>
 ): Promise<void> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/auth/update-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: "privacyPrefs", privacyPrefs }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? "Failed to update privacy preferences");
+    }
+    return;
+  }
   const now = new Date().toISOString();
   await d1Exec(
     "UPDATE users SET privacy_prefs = ?, updated_at = ? WHERE id = ?",
