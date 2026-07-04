@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { getPlatformConfig } from "@/services/platformSettings";
 // ✅ FIX: Use service layer — no inline Firestore
-import { submitSubscriptionPayment, getUserPlanStatus } from "@/services/subscriptions";
+import { submitSubscriptionPayment, submitSubscriptionPaymentOnline, getUserPlanStatus } from "@/services/subscriptions";
+import { initializePayment } from "@/services/payment";
+import { usePaymentMethod } from "@/components/payment/PaymentMethodPicker";
 import type { BankDetails } from "@/services/platformSettings";
 import type { SubscriptionPlan } from "@/types";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -31,6 +33,9 @@ export default function SubscriptionPage() {
   const [submitting, setSubmitting]     = useState(false);
   const [submitted, setSubmitted]       = useState(false);
   const [activeListingCount, setActiveListingCount] = useState(0);
+
+  const { slug: payMethod, Picker: PaymentPicker } = usePaymentMethod();
+  const [isPayingOnline, setIsPayingOnline] = useState(false);
 
   const currentPlanSlug = user?.subscriptionPlan ?? "free";
 
@@ -78,6 +83,40 @@ export default function SubscriptionPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handlePayOnline = () => {
+    if (!user || !selectedPlan) return;
+    setIsPayingOnline(true);
+    initializePayment(
+      {
+        email: user.email,
+        amount: selectedPlan.price,
+        reference: `SUB-${user.id}-${Date.now()}`,
+        metadata: { userId: user.id, plan: selectedPlan.slug, type: "subscription" },
+        onSuccess: async (reference) => {
+          try {
+            await submitSubscriptionPaymentOnline({
+              userId: user.id,
+              userName: user.name,
+              userEmail: user.email,
+              plan: selectedPlan.slug,
+              planName: selectedPlan.name,
+              amount: selectedPlan.price,
+              paymentReference: reference,
+            });
+            setSubmitted(true);
+            toast.success(`${selectedPlan.name} plan activated!`);
+          } catch {
+            toast.error("Payment received but activation failed — contact support with your reference.");
+          } finally {
+            setIsPayingOnline(false);
+          }
+        },
+        onClose: () => setIsPayingOnline(false),
+      },
+      payMethod ?? undefined,
+    );
   };
 
   if (isLoading) {
@@ -308,6 +347,39 @@ export default function SubscriptionPage() {
             Pay for {selectedPlan.name} — {formatCurrency(selectedPlan.price)}/month
           </h2>
 
+          <PaymentPicker />
+
+          {payMethod && payMethod !== "manual" ? (
+            <>
+              {/* What you'll unlock */}
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
+                <p className="text-xs font-semibold text-primary mb-2">After activation you'll get:</p>
+                <ul className="space-y-1">
+                  {[
+                    `Up to ${selectedPlan.maxListings === 999999 ? "unlimited" : selectedPlan.maxListings} active listings`,
+                    ...(selectedPlan.verifiedBadge  ? ["✓ Verified agent badge"] : []),
+                    ...(selectedPlan.leadsAccess    ? ["✓ Access to tenant leads"] : []),
+                    ...(selectedPlan.rankBoost      ? [`✓ ${selectedPlan.rankBoost}× search ranking boost`] : []),
+                  ].map((item) => (
+                    <li key={item} className="text-xs text-primary/80 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex gap-3">
+                <Button className="flex-1 gap-2" onClick={handlePayOnline} disabled={isPayingOnline}>
+                  {isPayingOnline
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                    : `Pay ${formatCurrency(selectedPlan.price)} Now`
+                  }
+                </Button>
+                <Button variant="outline" onClick={() => setSelectedPlan(null)}>Cancel</Button>
+              </div>
+            </>
+          ) : (
+          <>
           <div className="bg-secondary/50 rounded-xl p-4 space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Bank Transfer Details</p>
             {[
@@ -381,6 +453,8 @@ export default function SubscriptionPage() {
               Cancel
             </Button>
           </div>
+          </>
+          )}
         </div>
       )}
 
