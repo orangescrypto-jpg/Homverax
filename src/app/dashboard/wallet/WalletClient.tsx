@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Wallet, ArrowDownToLine, TrendingUp, Clock, CheckCircle2, XCircle, Copy } from "lucide-react";
+import { Wallet, ArrowDownToLine, TrendingUp, Clock, CheckCircle2, XCircle, Copy, Loader2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import {
   getOrCreateWallet, getWalletTransactions, requestPayout,
@@ -23,6 +24,8 @@ const TYPE_CONFIG = {
   fee_deduction: { label: "Fee", color: "text-orange-600", bg: "bg-orange-50", icon: XCircle },
 };
 
+interface Bank { name: string; code: string; }
+
 export default function WalletPage() {
   const { user } = useAuth();
   const [wallet, setWallet] = useState<SellerWallet | null>(null);
@@ -30,9 +33,17 @@ export default function WalletPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showPayout, setShowPayout] = useState(false);
   const [amount, setAmount] = useState("");
+
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [banksLoading, setBanksLoading] = useState(true);
+  const [banksError, setBanksError] = useState(false);
+  const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState(user?.bankName ?? "");
   const [accountNumber, setAccountNumber] = useState(user?.accountNumber ?? "");
   const [accountName, setAccountName] = useState(user?.accountName ?? "");
+  const [resolving, setResolving] = useState(false);
+  const [resolved, setResolved] = useState(false);
+  const [resolveError, setResolveError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -45,17 +56,69 @@ export default function WalletPage() {
       .finally(() => setIsLoading(false));
   }, [user]);
 
+  // Load Paystack's bank list once — gives us the bank_code Paystack's
+  // Transfers API requires. A free-text bank name isn't enough for
+  // automatic payout to work.
+  useEffect(() => {
+    fetch("/api/payments/banks")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.banks) setBanks(data.banks);
+        else setBanksError(true);
+      })
+      .catch(() => setBanksError(true))
+      .finally(() => setBanksLoading(false));
+  }, []);
+
+  // Auto-verify the account name once bank + a full 10-digit account
+  // number are selected. Catches typos before submission — same
+  // protection whether the platform is currently in manual or Paystack
+  // payout mode, since a wrong account number is a mistake either way.
+  useEffect(() => {
+    setResolved(false);
+    setResolveError("");
+    setAccountName("");
+
+    if (!bankCode || accountNumber.length !== 10) return;
+
+    let cancelled = false;
+    setResolving(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/payments/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountNumber, bankCode }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !data.accountName) {
+          setResolveError(data.error || "Could not verify this account. Double-check the number and bank.");
+          return;
+        }
+        setAccountName(data.accountName);
+        setResolved(true);
+      } catch {
+        if (!cancelled) setResolveError("Could not verify account — check your connection and try again.");
+      } finally {
+        if (!cancelled) setResolving(false);
+      }
+    }, 500);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [bankCode, accountNumber]);
+
   const handlePayout = async () => {
     if (!user || !wallet) return;
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error("Enter a valid amount"); return; }
-    if (!bankName.trim()) { toast.error("Enter bank name"); return; }
-    if (!accountNumber.trim()) { toast.error("Enter account number"); return; }
-    if (!accountName.trim()) { toast.error("Enter account name"); return; }
+    if (!bankCode) { toast.error("Select your bank"); return; }
+    if (accountNumber.length !== 10) { toast.error("Enter a valid 10-digit account number"); return; }
+    if (!resolved || !accountName.trim()) { toast.error("We couldn't verify this account — check the details."); return; }
 
     setSubmitting(true);
     try {
-      await requestPayout(user.id, user.name, amt, bankName, accountNumber, accountName);
+      await requestPayout(user.id, user.name, amt, bankName, accountNumber, accountName, bankCode);
       toast.success("Payout requested! Admin will process within 24 hours.");
       setShowPayout(false);
       setAmount("");
@@ -127,20 +190,58 @@ export default function WalletPage() {
                 <Label>Amount (₦)</Label>
                 <Input type="number" placeholder="Enter amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-1" />
               </div>
+
               <div>
-                <Label>Bank Name</Label>
-                <Input placeholder="e.g. First Bank" value={bankName} onChange={(e) => setBankName(e.target.value)} className="mt-1" />
+                <Label>Bank</Label>
+                {banksError ? (
+                  <p className="text-xs text-destructive mt-1">Could not load bank list. Please try again shortly.</p>
+                ) : (
+                  <Select
+                    value={bankCode}
+                    onValueChange={(code) => {
+                      setBankCode(code);
+                      setBankName(banks.find((b) => b.code === code)?.name ?? "");
+                    }}
+                    disabled={banksLoading}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder={banksLoading ? "Loading banks…" : "Select your bank"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {banks.map((b) => (
+                        <SelectItem key={b.code} value={b.code}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
+
               <div>
                 <Label>Account Number</Label>
-                <Input placeholder="10-digit account number" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} className="mt-1" maxLength={10} />
+                <Input
+                  placeholder="10-digit account number"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  className="mt-1"
+                  maxLength={10}
+                  inputMode="numeric"
+                />
               </div>
+
               <div>
                 <Label>Account Name</Label>
-                <Input placeholder="Name on account" value={accountName} onChange={(e) => setAccountName(e.target.value)} className="mt-1" />
+                <div className="relative mt-1">
+                  <Input value={accountName} placeholder="Auto-verified from bank + account number" readOnly disabled />
+                  {resolving && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />}
+                  {resolved && !resolving && <CheckCircle2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-green-600" />}
+                  {resolveError && !resolving && <XCircle className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-destructive" />}
+                </div>
+                {resolveError && <p className="text-xs text-destructive mt-1">{resolveError}</p>}
+                {resolved && <p className="text-xs text-green-600 mt-1">Account verified ✓ — this is who will receive the payout.</p>}
               </div>
+
               <div className="flex gap-2 pt-1">
-                <Button className="flex-1" onClick={handlePayout} disabled={submitting}>
+                <Button className="flex-1" onClick={handlePayout} disabled={submitting || !resolved}>
                   {submitting ? "Submitting…" : "Submit Payout Request"}
                 </Button>
                 <Button variant="outline" onClick={() => setShowPayout(false)}>Cancel</Button>
