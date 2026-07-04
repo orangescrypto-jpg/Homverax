@@ -84,6 +84,16 @@ export async function GET(request: NextRequest) {
       const offers = await getOffersByQuery("buyerId", buyerId);
       return NextResponse.json({ offers });
     }
+    case "received": {
+      const sellerId = params.get("sellerId") ?? "";
+      const offers = await getOffersByQuery("sellerId", sellerId);
+      return NextResponse.json({ offers });
+    }
+    case "get": {
+      const offerId = params.get("offerId") ?? "";
+      const offer = await loadOffer(offerId);
+      return NextResponse.json({ offer });
+    }
     default:
       return NextResponse.json({ error: "Invalid or missing action" }, { status: 400 });
   }
@@ -113,30 +123,34 @@ export async function POST(request: NextRequest) {
       if (!offerId) return NextResponse.json({ error: "Missing offerId" }, { status: 400 });
       const offer = await loadOffer(offerId);
       if (!offer) return NextResponse.json({ error: "Offer not found" }, { status: 404 });
-      await saveOffer({ ...offer, status: "accepted", updatedAt: new Date().toISOString() });
-      return NextResponse.json({ success: true });
+      const updated = { ...offer, status: "accepted" as OfferStatus, updatedAt: new Date().toISOString() };
+      await saveOffer(updated);
+      return NextResponse.json({ success: true, offer: updated });
     }
     case "reject": {
       if (!offerId) return NextResponse.json({ error: "Missing offerId" }, { status: 400 });
       const offer = await loadOffer(offerId);
       if (!offer) return NextResponse.json({ error: "Offer not found" }, { status: 404 });
-      await saveOffer({ ...offer, status: "rejected", updatedAt: new Date().toISOString() });
-      return NextResponse.json({ success: true });
+      const updated = { ...offer, status: "rejected" as OfferStatus, updatedAt: new Date().toISOString() };
+      await saveOffer(updated);
+      return NextResponse.json({ success: true, offer: updated });
     }
     case "counter": {
       const { counterPrice, counterNote } = body;
       if (!offerId) return NextResponse.json({ error: "Missing offerId" }, { status: 400 });
       const offer = await loadOffer(offerId);
       if (!offer) return NextResponse.json({ error: "Offer not found" }, { status: 404 });
-      await saveOffer({ ...offer, status: "countered", counterPrice, counterNote: counterNote ?? "", updatedAt: new Date().toISOString() });
-      return NextResponse.json({ success: true });
+      const updated = { ...offer, status: "countered" as OfferStatus, counterPrice, counterNote: counterNote ?? "", updatedAt: new Date().toISOString() };
+      await saveOffer(updated);
+      return NextResponse.json({ success: true, offer: updated });
     }
     case "markPaid": {
       if (!offerId) return NextResponse.json({ error: "Missing offerId" }, { status: 400 });
       const offer = await loadOffer(offerId);
       if (!offer) return NextResponse.json({ error: "Offer not found" }, { status: 404 });
-      await saveOffer({ ...offer, status: "paid", updatedAt: new Date().toISOString() });
-      return NextResponse.json({ success: true });
+      const updated = { ...offer, status: "paid" as OfferStatus, updatedAt: new Date().toISOString() };
+      await saveOffer(updated);
+      return NextResponse.json({ success: true, offer: updated });
     }
     default:
       return NextResponse.json({ error: "Invalid or missing action" }, { status: 400 });
