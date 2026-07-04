@@ -64,7 +64,7 @@ function StarRating({
 
 export default function AgentProfileClient({ agentId }: { agentId: string }) {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
   const [agent, setAgent] = useState<HomveraxUser | null>(null);
   const [listings, setListings] = useState<PropertyListing[]>([]);
@@ -83,7 +83,21 @@ export default function AgentProfileClient({ agentId }: { agentId: string }) {
   const [messageText, setMessageText] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
 
+  // Agent profiles are login-gated — only listing pages stay public.
+  // Wait for auth to finish initializing (authLoading) before redirecting,
+  // so a logged-in user isn't bounced to /login on a page refresh while
+  // their session is still being restored.
   useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      router.replace(`/login?next=/agents/${agentId}`);
+    }
+  }, [authLoading, isAuthenticated, agentId, router]);
+
+  useEffect(() => {
+    // Don't fetch profile data until we know the visitor is allowed to see it.
+    if (authLoading || !isAuthenticated) return;
+
     async function load() {
       try {
         // ✅ FIX: getUserById() routes through service layer — no direct db access
@@ -118,7 +132,7 @@ export default function AgentProfileClient({ agentId }: { agentId: string }) {
       }
     }
     load();
-  }, [agentId, isAuthenticated, user, router]);
+  }, [agentId, isAuthenticated, authLoading, user, router]);
 
   const handleSubmitReview = async () => {
     if (!isAuthenticated || !user) { router.push("/login"); return; }
