@@ -52,20 +52,29 @@ export async function createOffer(params: {
   return offer as Offer;
 }
 
-export async function acceptOffer(offerId: string): Promise<void> {
-  await postOffers({ action: "accept", offerId });
+export async function acceptOffer(offerId: string): Promise<Offer> {
+  const { offer } = await postOffers({ action: "accept", offerId });
+  return offer as Offer;
 }
 
-export async function rejectOffer(offerId: string, _reason?: string): Promise<void> {
-  await postOffers({ action: "reject", offerId });
+export async function rejectOffer(offerId: string, _reason?: string): Promise<Offer> {
+  const { offer } = await postOffers({ action: "reject", offerId });
+  return offer as Offer;
 }
 
-export async function counterOffer(offerId: string, counterPrice: number, counterNote?: string): Promise<void> {
-  await postOffers({ action: "counter", offerId, counterPrice, counterNote });
+export async function counterOffer(offerId: string, counterPrice: number, counterNote?: string): Promise<Offer> {
+  const { offer } = await postOffers({ action: "counter", offerId, counterPrice, counterNote });
+  return offer as Offer;
 }
 
-export async function markOfferPaid(offerId: string, _escrowId: string): Promise<void> {
-  await postOffers({ action: "markPaid", offerId });
+export async function markOfferPaid(offerId: string, _escrowId: string): Promise<Offer> {
+  const { offer } = await postOffers({ action: "markPaid", offerId });
+  return offer as Offer;
+}
+
+export async function getOfferById(offerId: string): Promise<Offer | null> {
+  const { offer } = await getOffers({ action: "get", offerId });
+  return (offer as Offer | null) ?? null;
 }
 
 export async function getAcceptedOffer(listingId: string, buyerId: string): Promise<Offer | null> {
@@ -85,5 +94,10 @@ export async function getOffersForListing(listingId: string): Promise<Offer[]> {
 
 export async function getMyOffers(buyerId: string): Promise<Offer[]> {
   const { offers } = await getOffers({ action: "mine", buyerId });
+  return (offers as Offer[]) ?? [];
+}
+
+export async function getReceivedOffers(sellerId: string): Promise<Offer[]> {
+  const { offers } = await getOffers({ action: "received", sellerId });
   return (offers as Offer[]) ?? [];
 }
