@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -22,6 +22,11 @@ type FormData = z.infer<typeof schema>;
 
 export default function LoginClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Where to send the user after login — e.g. /agents/[id] when they were
+  // bounced here from a login-gated page like an agent profile. Falls back
+  // to the normal dashboard/role-select flow if nothing was set.
+  const next = searchParams.get("next");
   const { setUser } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -37,7 +42,7 @@ export default function LoginClient() {
       const user = await loginWithEmail(data.email, data.password);
       setUser(user);
       toast.success(`Welcome back, ${user.firstName || user.name}!`);
-      router.push(user.roleSelected ? "/dashboard" : "/select-role");
+      router.push(next || (user.roleSelected ? "/dashboard" : "/select-role"));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Sign in failed";
       if (msg.includes("user-not-found") || msg.includes("wrong-password") || msg.includes("invalid-credential")) {
@@ -54,7 +59,7 @@ export default function LoginClient() {
       const user = await loginWithGoogle();
       setUser(user);
       toast.success(`Welcome, ${user.firstName || user.name}!`);
-      router.push(user.roleSelected ? "/dashboard" : "/select-role");
+      router.push(next || (user.roleSelected ? "/dashboard" : "/select-role"));
     } catch (err: unknown) {
       toast.error("Google sign-in failed. Please try again.");
     } finally {
