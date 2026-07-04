@@ -132,7 +132,7 @@ export default function LoginClient() {
                 <h1 className="text-3xl font-serif font-bold text-foreground mb-2">Sign in</h1>
                 <p className="text-muted-foreground">
                   Don't have an account?{" "}
-                  <Link href="/register" className="text-primary font-medium hover:underline">
+                  <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="text-primary font-medium hover:underline">
                     Create one free
                   </Link>
                 </p>
