@@ -58,6 +58,39 @@ export async function submitSubscriptionPayment(params: {
   await saveRecords("sub_payments", records);
 }
 
+/**
+ * Online (Paystack/Flutterwave) subscription payment — verified server-side
+ * before this runs, so it activates the plan immediately instead of
+ * waiting on admin review, unlike the manual proof-upload flow above.
+ */
+export async function submitSubscriptionPaymentOnline(params: {
+  userId: string; userName: string; userEmail: string; plan: string; planName: string; amount: number; paymentReference: string;
+}): Promise<void> {
+  const records = await loadRecords<SubscriptionPaymentRecord>("sub_payments");
+  const id = newId();
+  const now = new Date().toISOString();
+  records.push({
+    id, userId: params.userId, userName: params.userName, userEmail: params.userEmail,
+    plan: params.plan, planName: params.planName, amount: params.amount,
+    status: "approved", createdAt: now, processedAt: now, processedBy: "Online Payment (auto)",
+  } as SubscriptionPaymentRecord);
+  await saveRecords("sub_payments", records);
+
+  const expiry = addMonths(new Date(), 1).toISOString();
+  await updateUserSubscription(params.userId, params.plan, expiry);
+
+  try {
+    void sendSubscriptionActivatedEmail({
+      userEmail: params.userEmail,
+      userName:  params.userName,
+      planName:  params.planName,
+      expiresAt: new Date(expiry).toLocaleDateString("en-NG", { dateStyle: "long" }),
+    });
+  } catch (err) {
+    console.warn("[subscriptions] submitSubscriptionPaymentOnline email error:", err);
+  }
+}
+
 export async function submitBoostPayment(params: {
   userId: string; listingId: string; listingTitle: string; boostType: string; boostLabel: string; amount: number; proofFile?: File;
 }): Promise<void> {
@@ -86,6 +119,25 @@ export async function submitBoostPayment(params: {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Boost payment submission failed" })) as { error?: string };
     throw new Error(err.error ?? "Boost payment submission failed");
+  }
+}
+
+/**
+ * Online (Paystack/Flutterwave) boost payment — verified server-side before
+ * this is called, so unlike the manual proof-upload flow it applies the
+ * boost immediately instead of waiting for admin review.
+ */
+export async function submitBoostPaymentOnline(params: {
+  listingId: string; listingTitle: string; boostType: string; boostLabel: string; amount: number; paymentReference: string;
+}): Promise<void> {
+  const res = await fetch("/api/boost/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...params, paidOnline: true }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Boost activation failed" })) as { error?: string };
+    throw new Error(err.error ?? "Boost activation failed");
   }
 }
 
