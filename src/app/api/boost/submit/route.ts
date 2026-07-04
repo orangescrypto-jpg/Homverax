@@ -27,7 +27,7 @@ interface BoostPaymentRecord {
   id: string; userId: string; listingId: string; listingTitle: string;
   boostType: string; boostLabel: string; amount: number; proofUrl?: string;
   status: "pending" | "approved" | "rejected"; createdAt: string;
-  processedAt?: string; processedBy?: string;
+  processedAt?: string; processedBy?: string; paymentReference?: string;
 }
 
 async function loadRecords<T>(key: string): Promise<T[]> {
@@ -46,6 +46,32 @@ async function saveRecords<T>(key: string, records: T[]): Promise<void> {
   );
 }
 
+/** Look up the configured duration for a boost type, same source the admin
+ * approval flow uses (services/subscriptions.ts approveBoostPayment). */
+async function getBoostDurationDays(boostType: string): Promise<number | undefined> {
+  const rows = await d1Query<{ value: string }>(
+    "SELECT value FROM platform_settings WHERE key = 'config'", []
+  );
+  if (!rows.length) return undefined;
+  try {
+    const cfg = JSON.parse(rows[0].value) as { boostOptions?: { type: string; durationDays?: number }[] };
+    return cfg.boostOptions?.find((o) => o.type === boostType)?.durationDays;
+  } catch {
+    return undefined;
+  }
+}
+
+async function applyBoostServer(listingId: string, boostType: string, durationDays?: number): Promise<void> {
+  const now = new Date().toISOString();
+  const expiresAt = durationDays
+    ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+  await d1Exec(
+    "UPDATE listings SET boost_type = ?, boost_expires_at = ?, updated_at = ? WHERE id = ?",
+    [boostType, expiresAt, now, listingId]
+  );
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -56,6 +82,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     listingId?: string; listingTitle?: string; boostType?: string;
     boostLabel?: string; amount?: number; proofUrl?: string;
+    paidOnline?: boolean; paymentReference?: string;
   } | null;
 
   if (!body?.listingId || !body.listingTitle || !body.boostType || !body.boostLabel || typeof body.amount !== "number") {
@@ -66,6 +93,10 @@ export async function POST(request: NextRequest) {
     const records = await loadRecords<BoostPaymentRecord>("boost_payments");
     const id = newId();
     const now = new Date().toISOString();
+    // ✅ Online payments (Paystack/Flutterwave) are verified server-side
+    // BEFORE this route is called (see /api/payments/verify), so unlike
+    // the manual proof-upload flow they skip the "pending admin review"
+    // step entirely and apply the boost immediately.
     const record: BoostPaymentRecord = {
       id,
       userId: user.id,
@@ -75,11 +106,18 @@ export async function POST(request: NextRequest) {
       boostLabel: body.boostLabel,
       amount: body.amount,
       proofUrl: body.proofUrl,
-      status: "pending",
+      paymentReference: body.paymentReference,
+      status: body.paidOnline ? "approved" : "pending",
       createdAt: now,
+      ...(body.paidOnline ? { processedAt: now, processedBy: "Online Payment (auto)" } : {}),
     };
     records.push(record);
     await saveRecords("boost_payments", records);
+
+    if (body.paidOnline) {
+      const durationDays = await getBoostDurationDays(body.boostType);
+      await applyBoostServer(body.listingId, body.boostType, durationDays);
+    }
 
     return NextResponse.json({ success: true, record });
   } catch (err) {
