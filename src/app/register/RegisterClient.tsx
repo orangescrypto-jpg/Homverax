@@ -45,6 +45,12 @@ const BENEFITS = [
 export default function RegisterClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Where the visitor was headed before being asked to sign up — e.g. an
+  // agent profile. New accounts must still pass through /select-role first
+  // (role choice is required onboarding), so this gets forwarded along
+  // rather than used directly here.
+  const next = searchParams.get("next");
+  const selectRoleHref = next ? `/select-role?next=${encodeURIComponent(next)}` : "/select-role";
   const { setUser } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -138,7 +144,7 @@ export default function RegisterClient() {
       } else {
         toast.success("Account created! Let's get you set up.");
       }
-      router.push("/select-role");
+      router.push(selectRoleHref);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[RegisterClient] registration failed:", err);
@@ -173,7 +179,7 @@ export default function RegisterClient() {
       processReferral(user.id, user.name);
 
       toast.success("Account created!");
-      router.push(user.roleSelected ? "/dashboard" : "/select-role");
+      router.push(user.roleSelected ? (next || "/dashboard") : selectRoleHref);
     } catch {
       toast.error("Google sign-in failed");
     } finally {
