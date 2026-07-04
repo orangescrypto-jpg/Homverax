@@ -230,7 +230,10 @@ export interface PlatformConfig {
     staleDays: number;
   };
   listingsPerPage: number;
-  paymentProvider: string;
+  /** @deprecated use paymentProviders (array) — kept for old records, migrated on read */
+  paymentProvider?: string;
+  /** Admin can enable one or more payment methods at once (min 1). */
+  paymentProviders: string[];
   messagingRateLimitPerHour: number;
   enableImageCompression: boolean;
   imageCompressionQuality: number;
@@ -446,7 +449,7 @@ export const DEFAULT_CONFIG: PlatformConfig = {
     staleDays: 30,
   },
   listingsPerPage: 12,
-  paymentProvider: "manual",
+  paymentProviders: ["manual"],
   messagingRateLimitPerHour: 60,
   enableImageCompression: true,
   imageCompressionQuality: 0.8,
@@ -472,9 +475,16 @@ export async function loadPlatformConfigFromDb(): Promise<PlatformConfig> {
     );
     if (rows.length && rows[0].value) {
       const data = JSON.parse(rows[0].value) as Partial<PlatformConfig>;
+      // ✅ Migrate legacy single-provider configs: old records saved
+      // `paymentProvider: "paystack"` before multi-provider support existed.
+      // Without this, those admins would silently drop back to "manual only".
+      const migratedProviders =
+        data.paymentProviders ??
+        (data.paymentProvider ? [data.paymentProvider] : DEFAULT_CONFIG.paymentProviders);
       return {
         ...DEFAULT_CONFIG,
         ...data,
+        paymentProviders: migratedProviders.length ? migratedProviders : DEFAULT_CONFIG.paymentProviders,
         escrowFees: { ...DEFAULT_ESCROW_FEES, ...(data.escrowFees ?? {}) },
         inspectionFee: { ...DEFAULT_INSPECTION_FEE, ...(data.inspectionFee ?? {}) },
         featuredAgent: { ...DEFAULT_FEATURED_AGENT, ...(data.featuredAgent ?? {}) },
