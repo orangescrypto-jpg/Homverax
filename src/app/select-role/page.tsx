@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2, CheckCircle2, Home, Loader2,
   ShieldCheck, User, Wrench,
@@ -19,8 +19,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
   User, Building2, Home, Wrench, ShieldCheck,
 };
 
-export default function SelectRolePage() {
+function SelectRoleContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Final destination after role setup — e.g. the agent profile the
+  // visitor originally tried to view before being routed through
+  // login/register/select-role. Falls back to the normal dashboard.
+  const next = searchParams.get("next");
   const { user, isLoading: authLoading } = useAuth();
   const { updateUser } = useAuthStore();
   const [selected, setSelected] = useState<UserRole | null>(
@@ -39,7 +44,7 @@ export default function SelectRolePage() {
       await updateUserRole(user.id, selected);
       updateUser({ role: selected, roleSelected: true });
       toast.success("Great! Your account is all set.");
-      router.push("/dashboard");
+      router.push(next || "/dashboard");
     } catch (err) {
       console.error("[select-role] Failed to save role:", err);
       const msg = err instanceof Error ? err.message : "Failed to save your role. Please try again.";
@@ -110,5 +115,15 @@ export default function SelectRolePage() {
         </Button>
       </div>
     </div>
+  );
+}
+
+export default function SelectRolePage() {
+  // Suspense boundary required: this page reads the ?next= redirect param
+  // via useSearchParams(), which Next.js requires to be wrapped.
+  return (
+    <Suspense fallback={null}>
+      <SelectRoleContent />
+    </Suspense>
   );
 }
