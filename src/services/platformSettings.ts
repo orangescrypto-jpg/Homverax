@@ -234,6 +234,20 @@ export interface PlatformConfig {
   paymentProvider?: string;
   /** Admin can enable one or more payment methods at once (min 1). */
   paymentProviders: string[];
+  /**
+   * How SELLER payouts get paid out — separate from paymentProviders above,
+   * which only controls how buyers pay in. Previously transferToSeller()
+   * silently used "the first enabled online provider" for payout with no
+   * dedicated toggle and no working transfer route behind it — enabling
+   * Paystack for checkout would quietly also switch payouts to an
+   * automatic transfer that 404'd. This makes payout mode explicit and
+   * independent.
+   * "manual"   -> admin reviews each payout request and sends the bank
+   *               transfer by hand, then confirms with a reference + proof.
+   * "paystack" -> platform calls Paystack Transfers API automatically
+   *               when admin approves a payout request.
+   */
+  payoutMethod: "manual" | "paystack";
   messagingRateLimitPerHour: number;
   enableImageCompression: boolean;
   imageCompressionQuality: number;
@@ -450,6 +464,7 @@ export const DEFAULT_CONFIG: PlatformConfig = {
   },
   listingsPerPage: 12,
   paymentProviders: ["manual"],
+  payoutMethod: "manual",
   messagingRateLimitPerHour: 60,
   enableImageCompression: true,
   imageCompressionQuality: 0.8,
