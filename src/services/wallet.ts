@@ -276,6 +276,19 @@ export async function approvePayout(
     [reference, note ?? null, now, payoutId]
   );
 
+  // ✅ FIX: the wallet ledger only ever recorded "Payout requested — ..." at
+  // request time (balance already deducted then). Approval never added a
+  // matching "completed" entry, so a seller's transaction history showed a
+  // payout debit that silently went nowhere — no confirmation it was ever
+  // actually paid, no bank reference visible in the ledger itself.
+  await addWalletTransaction({
+    userId: payout.userId,
+    type: "payout",
+    amount: payout.amount,
+    description: `Payout completed — ${payout.bankName} ···${payout.accountNumber.slice(-4)} (ref: ${reference})`,
+    reference: payoutId,
+  });
+
   // ── Email trigger: payout approved ────────────────────────────────────────
   try {
     const userRows = await d1Query<{ email: string; name: string }>(
