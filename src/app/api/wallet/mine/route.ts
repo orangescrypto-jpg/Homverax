@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json().catch(() => null);
-  const { amount, bankName, accountNumber, accountName, userName } = body ?? {};
+  const { amount, bankName, accountNumber, accountName, bankCode, userName } = body ?? {};
   if (!amount || !bankName || !accountNumber || !accountName) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
   const now = new Date().toISOString();
 
   await d1Exec(
-    "UPDATE users SET bank_name = ?, account_number = ?, account_name = ?, updated_at = ? WHERE id = ?",
-    [bankName, accountNumber, accountName, now, user.id]
+    "UPDATE users SET bank_name = ?, account_number = ?, account_name = ?, bank_code = ?, updated_at = ? WHERE id = ?",
+    [bankName, accountNumber, accountName, bankCode ?? null, now, user.id]
   );
 
   await d1Exec(
@@ -105,9 +105,9 @@ export async function POST(request: NextRequest) {
 
   const payoutId = newId();
   await d1Exec(
-    `INSERT INTO payouts (id, user_id, user_name, amount, bank_name, account_number, account_name, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-    [payoutId, user.id, userName ?? user.email ?? "Unknown", amount, bankName, accountNumber, accountName, now]
+    `INSERT INTO payouts (id, user_id, user_name, amount, bank_name, account_number, account_name, bank_code, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    [payoutId, user.id, userName ?? user.email ?? "Unknown", amount, bankName, accountNumber, accountName, bankCode ?? null, now]
   );
 
   return NextResponse.json({ success: true });
