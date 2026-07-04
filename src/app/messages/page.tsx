@@ -583,17 +583,17 @@ export default function MessagesPage() {
   };
 
   const handleAcceptOffer = async (offerId: string, price: number) => {
-    if (!user || !activeConvId) return;
+    if (!user || !activeConvId || !otherParticipant) return;
     try {
-      await acceptOfferFromChat(offerId);
+      await acceptOfferFromChat(offerId, activeConvId, user.id, otherParticipant.id);
       toast.success("Offer accepted! Buyer can now proceed to escrow.");
     } catch { toast.error("Failed to accept offer"); }
   };
 
   const handleRejectOffer = async (offerId: string, price: number) => {
-    if (!user || !activeConvId) return;
+    if (!user || !activeConvId || !otherParticipant) return;
     try {
-      await rejectOfferFromChat(offerId);
+      await rejectOfferFromChat(offerId, activeConvId, user.id, otherParticipant.id);
       toast.success("Offer declined");
     } catch { toast.error("Failed to decline offer"); }
   };
@@ -603,7 +603,7 @@ export default function MessagesPage() {
     try {
       const buyerMsg = messages.find(m => m.offerData?.offerId === offerId);
       const originalPrice = buyerMsg?.offerData?.proposedPrice ?? 0;
-      await counterOfferFromChat(offerId, counterPrice, note);
+      await counterOfferFromChat(offerId, counterPrice, note, activeConvId, user.id, otherParticipant.id);
       setCounterModal(null);
       toast.success("Counter-offer sent!");
     } catch { toast.error("Failed to send counter-offer"); }
