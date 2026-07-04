@@ -16,7 +16,9 @@ import {
 import { getMyListings } from "@/services/listings";
 import { getPlatformConfig } from "@/services/platformSettings";
 // ✅ FIX: Use service layer — no direct applyBoost until admin approves payment
-import { submitBoostPayment } from "@/services/subscriptions";
+import { submitBoostPayment, submitBoostPaymentOnline } from "@/services/subscriptions";
+import { initializePayment } from "@/services/payment";
+import { usePaymentMethod } from "@/components/payment/PaymentMethodPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency, formatPriceLabel, cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -46,6 +48,9 @@ export default function BoostListingsPage() {
   const [proofFile, setProofFile]       = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted]       = useState(false);
+
+  const { slug: payMethod, Picker: PaymentPicker } = usePaymentMethod();
+  const [isPayingOnline, setIsPayingOnline] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -95,6 +100,39 @@ export default function BoostListingsPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handlePayOnline = () => {
+    if (!user || !selectedListingId || !selectedListing || !selectedOption) return;
+    setIsPayingOnline(true);
+    initializePayment(
+      {
+        email: user.email,
+        amount: selectedOption.price,
+        reference: `BOOST-${selectedListingId}-${Date.now()}`,
+        metadata: { listingId: selectedListingId, type: "boost" },
+        onSuccess: async (reference) => {
+          try {
+            await submitBoostPaymentOnline({
+              listingId: selectedListingId,
+              listingTitle: selectedListing.title,
+              boostType: selectedBoost,
+              boostLabel: selectedOption.label,
+              amount: selectedOption.price,
+              paymentReference: reference,
+            });
+            setSubmitted(true);
+            toast.success("Boost activated!");
+          } catch {
+            toast.error("Payment received but activation failed — contact support with your reference.");
+          } finally {
+            setIsPayingOnline(false);
+          }
+        },
+        onClose: () => setIsPayingOnline(false),
+      },
+      payMethod ?? undefined,
+    );
   };
 
   if (submitted) {
@@ -239,7 +277,7 @@ export default function BoostListingsPage() {
             </p>
           </>
         ) : (
-          /* Payment proof section */
+          /* Payment section */
           bank && selectedOption && (
             <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
               <div className="flex items-center justify-between">
@@ -251,6 +289,42 @@ export default function BoostListingsPage() {
                 </button>
               </div>
 
+              <PaymentPicker />
+
+              {payMethod && payMethod !== "manual" ? (
+                <>
+                  {/* Summary */}
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 text-sm">
+                    <p className="font-semibold text-foreground mb-1">Boost Summary</p>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Listing:</span>
+                      <span className="font-medium text-foreground truncate max-w-[60%]">{selectedListing?.title}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground mt-1">
+                      <span>Boost type:</span>
+                      <span className="font-medium text-foreground">{selectedOption.label}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground mt-1">
+                      <span>Duration:</span>
+                      <span className="font-medium text-foreground">7 days</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-primary mt-1 pt-1 border-t border-primary/20">
+                      <span>Total:</span>
+                      <span>{formatCurrency(selectedOption.price)}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button className="flex-1 gap-2" onClick={handlePayOnline} disabled={isPayingOnline}>
+                      {isPayingOnline
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                        : `Pay ${formatCurrency(selectedOption.price)} Now`
+                      }
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowPayment(false)}>Back</Button>
+                  </div>
+                </>
+              ) : (
+              <>
               {/* Bank details */}
               <div className="bg-secondary/50 rounded-xl p-4 space-y-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -326,6 +400,8 @@ export default function BoostListingsPage() {
                   Back
                 </Button>
               </div>
+              </>
+              )}
             </div>
           )
         )}
