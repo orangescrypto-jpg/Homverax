@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import {
   AlertCircle, AlertTriangle, BanknoteIcon,
   CheckCircle2, ChevronLeft, Clock, Copy,
-  ExternalLink, Loader2, Shield, Upload, FileImage,
+  ExternalLink, Loader2, Shield, Upload, FileImage, Download,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,7 @@ export default function EscrowDetailPage() {
   // pay flow(s) render below.
   const { slug: payMethod, providers: payProviders, Picker: PaymentPicker } = usePaymentMethod();
   const [isPayingOnline, setIsPayingOnline] = useState(false);
+  const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -132,6 +133,31 @@ export default function EscrowDetailPage() {
     );
     setTransferRef("");
     setReceiptFile(null);
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!escrow) return;
+    setIsDownloadingReceipt(true);
+    try {
+      const res = await fetch(`/api/escrow/${escrow.id}/receipt`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to generate receipt" }));
+        throw new Error(err.error ?? "Failed to generate receipt");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `HomveraX-Receipt-${escrow.id.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download receipt");
+    } finally {
+      setIsDownloadingReceipt(false);
+    }
   };
 
   const handlePayOnline = () => {
@@ -345,6 +371,28 @@ export default function EscrowDetailPage() {
                 </div>
               ))}
           </div>
+
+          {/* ── Receipt download — only once funds have actually been
+              released, since that's the only point a receipt is accurate.
+              Visible to both buyer and seller on this transaction. ──────── */}
+          {escrow.status === "released" && (
+            <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-green-700">Transaction complete</p>
+                <p className="text-xs text-green-600">Download your official payment receipt for this transaction.</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2 border-green-300 text-green-700 hover:bg-green-100"
+                disabled={isDownloadingReceipt}
+                onClick={handleDownloadReceipt}
+              >
+                {isDownloadingReceipt ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Download Receipt
+              </Button>
+            </div>
+          )}
 
           {/* ── ACTION BUTTONS ────────────────────────────────────────────── */}
 
