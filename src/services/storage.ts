@@ -10,7 +10,8 @@ export type StoragePath =
   | `verifications/${string}/${string}`
   | `subscriptionProofs/${string}/${string}`
   | `boostProofs/${string}/${string}`
-  | `listings/${string}/${string}`;
+  | `listings/${string}/${string}`
+  | `payoutProofs/${string}/${string}`;
 
 /**
  * Upload a single file via the /api/upload route and return its public URL.
@@ -51,6 +52,12 @@ export async function uploadSubscriptionProof(userId: string, file: File): Promi
 
 export async function uploadBoostProof(userId: string, file: File): Promise<string> {
   return uploadFile(`boostProofs/${userId}/${Date.now()}_${file.name}`, file);
+}
+
+// Manual payout mode: admin attaches this when marking a withdrawal paid —
+// the evidence needed if a seller later disputes "I never got paid."
+export async function uploadPayoutProof(payoutId: string, file: File): Promise<string> {
+  return uploadFile(`payoutProofs/${payoutId}/${Date.now()}_${file.name}`, file);
 }
 
 export async function uploadListingImage(listingId: string, file: File): Promise<string> {
