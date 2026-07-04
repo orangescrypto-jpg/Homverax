@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import RegisterClient from "./RegisterClient";
 
 export const metadata: Metadata = {
@@ -8,5 +9,11 @@ export const metadata: Metadata = {
 };
 
 export default function RegisterPage() {
-  return <RegisterClient />;
+  // Suspense boundary required: RegisterClient reads ?next= (and a
+  // referral code) via useSearchParams(), which Next.js requires wrapped.
+  return (
+    <Suspense fallback={null}>
+      <RegisterClient />
+    </Suspense>
+  );
 }
