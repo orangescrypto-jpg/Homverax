@@ -21,6 +21,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency, timeAgo } from "@/lib/utils";
 import { ESCROW_STEPS, PLATFORM_FEE_PERCENT } from "@/lib/constants";
 import { getPlatformConfig, type BankDetails } from "@/services/platformSettings";
+import { initializePayment } from "@/services/payment";
+import { usePaymentMethod } from "@/components/payment/PaymentMethodPicker";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { EscrowTransaction } from "@/types";
@@ -65,6 +67,11 @@ export default function EscrowDetailPage() {
   // Dispute form
   const [disputeReason, setDisputeReason] = useState("");
   const [showDispute, setShowDispute] = useState(false);
+
+  // Admin may have Manual, Paystack, or both enabled — this drives which
+  // pay flow(s) render below.
+  const { slug: payMethod, providers: payProviders, Picker: PaymentPicker } = usePaymentMethod();
+  const [isPayingOnline, setIsPayingOnline] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -125,6 +132,37 @@ export default function EscrowDetailPage() {
     );
     setTransferRef("");
     setReceiptFile(null);
+  };
+
+  const handlePayOnline = () => {
+    if (!user || !escrow) return;
+    setIsPayingOnline(true);
+    initializePayment(
+      {
+        email: user.email,
+        amount: totalPayable,
+        reference: `ESCROW-${escrow.id}-${Date.now()}`,
+        metadata: { escrowId: escrow.id, type: "escrow" },
+        onSuccess: async (reference) => {
+          try {
+            const res = await fetch("/api/payments/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reference, escrowId: escrow.id }),
+            });
+            if (!res.ok) throw new Error();
+            await refresh();
+            toast.success("Payment confirmed! Funds are now held in escrow.");
+          } catch {
+            toast.error("Payment received but verification failed — contact support with your reference.");
+          } finally {
+            setIsPayingOnline(false);
+          }
+        },
+        onClose: () => setIsPayingOnline(false),
+      },
+      payMethod ?? undefined,
+    );
   };
 
   const handleCancelOrder = async () => {
@@ -315,6 +353,33 @@ export default function EscrowDetailPage() {
             {/* ── BUYER: Show bank transfer instructions ─────────────────── */}
             {isBuyer && escrow.status === "pending" && (
               <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5">
+                {/* Payment method — only rendered if admin has 2+ methods enabled */}
+                <PaymentPicker className="mb-4" />
+
+                {/* Online payment option — shown when Paystack/Flutterwave is
+                    the chosen method (or the only enabled one) */}
+                {payMethod && payMethod !== "manual" && (
+                  <div className="mb-4">
+                    <div className="bg-card rounded-xl p-4 mb-4 border border-border">
+                      <p className="text-xs text-muted-foreground mb-1">Total amount to pay</p>
+                      <p className="text-2xl font-serif font-bold text-primary">
+                        {formatCurrency(totalPayable)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Includes {platformFee}% HomveraX escrow fee ({formatCurrency(escrow.buyerServiceCharge)})
+                      </p>
+                    </div>
+                    <Button className="w-full gap-2" disabled={isPayingOnline} onClick={handlePayOnline}>
+                      {isPayingOnline ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                      Pay {formatCurrency(totalPayable)} Now
+                    </Button>
+                  </div>
+                )}
+
+                {/* Manual bank transfer flow — shown when manual is chosen
+                    (or the only enabled method) */}
+                {(!payMethod || payMethod === "manual") && (
+                  <>
                 <div className="flex items-center gap-2 mb-4">
                   <BanknoteIcon className="w-5 h-5 text-primary" />
                   <h3 className="font-semibold text-foreground">
@@ -456,6 +521,8 @@ export default function EscrowDetailPage() {
                     Unpaid orders are automatically deleted after 24 hours.
                   </p>
                 </div>
+                  </>
+                )}
               </div>
             )}
 
