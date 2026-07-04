@@ -35,7 +35,8 @@ export interface TransferParams {
 
 export interface IPaymentProvider {
   name: string;
-  label: string;
+  label: string;        // shown to ADMIN in settings (can name the provider)
+  pickerLabel: string;  // shown to the USER at checkout (no provider name)
   initializePayment: (params: PaymentInitParams) => void;
   transferToSeller?: (params: TransferParams) => Promise<{
     success: boolean;
@@ -49,6 +50,7 @@ export interface IPaymentProvider {
 const ManualProvider: IPaymentProvider = {
   name:  "manual",
   label: "Manual Bank Transfer",
+  pickerLabel: "Bank Transfer (Manual)",
   initializePayment({ onSuccess, reference }) {
     // Manual = user makes bank transfer offline, UI shows bank details
     // Just resolve with the reference — UI handles the rest
@@ -61,6 +63,7 @@ const ManualProvider: IPaymentProvider = {
 const PaystackProvider: IPaymentProvider = {
   name:  "paystack",
   label: "Paystack",
+  pickerLabel: "Pay with Card / Bank (Online)",
   initializePayment({ email, amount, reference, metadata, onSuccess, onClose }) {
     const publicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
     if (!publicKey) {
@@ -100,6 +103,7 @@ const PaystackProvider: IPaymentProvider = {
 const FlutterwaveProvider: IPaymentProvider = {
   name:  "flutterwave",
   label: "Flutterwave",
+  pickerLabel: "Pay with Card / Bank (Online)",
   initializePayment({ email, amount, reference, metadata, onSuccess, onClose }) {
     const publicKey = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
     if (!publicKey) {
@@ -143,45 +147,81 @@ export const PAYMENT_PROVIDERS: Record<PaymentProviderSlug, IPaymentProvider> = 
   flutterwave: FlutterwaveProvider,
 };
 
-// ─── Get active provider from admin settings ──────────────────────────────────
-// ✅ FIX: Reads from Firestore so admin can switch without redeploy
+// ─── Get active provider(s) from admin settings ───────────────────────────────
+// ✅ FIX: Reads from platform config so admin can switch without redeploy.
+// Admin can now enable MORE THAN ONE provider at once (e.g. Manual + Paystack
+// together). getActivePaymentProviders() returns all enabled ones so the UI
+// can show a "how do you want to pay" choice when there's more than one;
+// getActivePaymentProvider() (singular) just returns the first enabled one,
+// for any code path that doesn't care about letting the user choose.
 
-let _cachedProvider: PaymentProviderSlug | null = null;
+let _cachedProviders: PaymentProviderSlug[] | null = null;
 let _cacheExpiry = 0;
 
-export async function getActivePaymentProvider(): Promise<IPaymentProvider> {
+function normalizeSlugs(slugs: string[]): PaymentProviderSlug[] {
+  const valid = slugs.filter((s): s is PaymentProviderSlug => s in PAYMENT_PROVIDERS);
+  return valid.length ? valid : ["manual"];
+}
+
+export async function getActivePaymentProviderSlugs(): Promise<PaymentProviderSlug[]> {
   const now = Date.now();
-  // Cache for 60s to avoid hammering Firestore on every payment
-  if (_cachedProvider && now < _cacheExpiry) {
-    return PAYMENT_PROVIDERS[_cachedProvider] ?? ManualProvider;
-  }
+  // Cache for 60s to avoid hammering the DB on every payment
+  if (_cachedProviders && now < _cacheExpiry) return _cachedProviders;
 
   try {
     const cfg = await getPlatformConfig();
-    const slug = cfg.paymentProvider as PaymentProviderSlug ?? "manual";
-    _cachedProvider = slug;
+    const raw = cfg.paymentProviders?.length ? cfg.paymentProviders : (cfg.paymentProvider ? [cfg.paymentProvider] : ["manual"]);
+    const slugs = normalizeSlugs(raw);
+    _cachedProviders = slugs;
     _cacheExpiry = now + 60_000;
-    return PAYMENT_PROVIDERS[slug] ?? ManualProvider;
+    return slugs;
   } catch {
-    return ManualProvider;
+    return ["manual"];
   }
 }
 
-/** Initialize payment with admin-configured provider */
-export async function initializePayment(params: PaymentInitParams): Promise<void> {
-  const provider = await getActivePaymentProvider();
+/** All currently enabled providers (admin may enable 1 or more at once). */
+export async function getActivePaymentProviders(): Promise<IPaymentProvider[]> {
+  const slugs = await getActivePaymentProviderSlugs();
+  return slugs.map((s) => PAYMENT_PROVIDERS[s]);
+}
+
+/** Convenience: first enabled provider. Use getActivePaymentProviders() when
+ * more than one may be active and the user should be able to choose. */
+export async function getActivePaymentProvider(): Promise<IPaymentProvider> {
+  const providers = await getActivePaymentProviders();
+  return providers[0] ?? ManualProvider;
+}
+
+/**
+ * Initialize payment with a specific provider (pass providerSlug when the
+ * checkout UI let the user pick, e.g. via <PaymentMethodPicker>). If omitted,
+ * falls back to the first enabled provider — fine when only one is active,
+ * but callers with multiple active providers should always pass one.
+ */
+export async function initializePayment(
+  params: PaymentInitParams,
+  providerSlug?: PaymentProviderSlug,
+): Promise<void> {
+  const provider = providerSlug
+    ? PAYMENT_PROVIDERS[providerSlug] ?? (await getActivePaymentProvider())
+    : await getActivePaymentProvider();
   provider.initializePayment(params);
 }
 
-/** Transfer to seller with admin-configured provider */
+/** Transfer to seller — always uses an online provider capable of payouts
+ * (manual has no transferToSeller, so this skips it and uses the first
+ * online provider that's enabled; falls back to a no-op success for pure
+ * manual-only setups, where payout is handled offline by the admin). */
 export async function transferToSeller(
   params: TransferParams
 ): Promise<{ success: boolean; reference: string; error?: string }> {
-  const provider = await getActivePaymentProvider();
-  if (!provider.transferToSeller) {
+  const providers = await getActivePaymentProviders();
+  const online = providers.find((p) => p.transferToSeller);
+  if (!online) {
     return { success: true, reference: params.reference };
   }
-  return provider.transferToSeller(params);
+  return online.transferToSeller!(params);
 }
 
 /** Server-side Paystack verification (used by API routes) */
