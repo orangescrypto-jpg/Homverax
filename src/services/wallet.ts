@@ -36,11 +36,14 @@ export interface PayoutRequest {
   bankName: string;
   accountNumber: string;
   accountName: string;
+  bankCode?: string;
   grossEscrowAmount?: number;
   platformFeeDeducted?: number;
   status: "pending" | "approved" | "rejected";
   note?: string;
   reference?: string;
+  proofUrl?: string;
+  payoutMethod?: "manual" | "paystack";
   createdAt: string;
   processedAt?: string;
 }
@@ -76,9 +79,12 @@ interface PayoutRow {
   bank_name: string;
   account_number: string;
   account_name: string;
+  bank_code: string | null;
   status: string;
   note: string | null;
   reference: string | null;
+  proof_url: string | null;
+  payout_method: string | null;
   created_at: string;
   processed_at: string | null;
 }
@@ -92,9 +98,12 @@ function rowToPayout(row: PayoutRow): PayoutRequest {
     bankName: row.bank_name,
     accountNumber: row.account_number,
     accountName: row.account_name,
+    bankCode: row.bank_code ?? undefined,
     status: row.status as PayoutRequest["status"],
     note: row.note ?? undefined,
     reference: row.reference ?? undefined,
+    proofUrl: row.proof_url ?? undefined,
+    payoutMethod: (row.payout_method as PayoutRequest["payoutMethod"]) ?? undefined,
     createdAt: row.created_at,
     processedAt: row.processed_at ?? undefined,
   };
@@ -223,11 +232,12 @@ export async function requestPayout(
   bankName: string,
   accountNumber: string,
   accountName: string,
+  bankCode?: string,
 ): Promise<void> {
   const res = await fetch("/api/wallet/mine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount, bankName, accountNumber, accountName, userName }),
+    body: JSON.stringify({ amount, bankName, accountNumber, accountName, bankCode, userName }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -255,11 +265,21 @@ export async function getAllPayoutRequests(
 /**
  * Admin approves a payout.
  * Updates the payouts table, then fires the payout_approved email.
+ *
+ * proofUrl: manual mode only — screenshot/receipt admin attaches as
+ * evidence the transfer was actually sent. Without this, a seller
+ * disputing "I never got paid" has nothing on record to check against.
+ * payoutMethod: which path actually paid this out ("manual" or
+ * "paystack") — recorded per-payout since admin can change the platform
+ * default mid-flight and old pending requests should keep whatever
+ * method they were actually paid through.
  */
 export async function approvePayout(
   payoutId: string,
   reference: string,
   note?: string,
+  proofUrl?: string,
+  payoutMethod?: "manual" | "paystack",
 ): Promise<void> {
   const now = new Date().toISOString();
 
@@ -272,8 +292,8 @@ export async function approvePayout(
 
   // Update payout record
   await d1Exec(
-    "UPDATE payouts SET status = 'approved', reference = ?, note = ?, processed_at = ? WHERE id = ?",
-    [reference, note ?? null, now, payoutId]
+    "UPDATE payouts SET status = 'approved', reference = ?, note = ?, proof_url = ?, payout_method = ?, processed_at = ? WHERE id = ?",
+    [reference, note ?? null, proofUrl ?? null, payoutMethod ?? "manual", now, payoutId]
   );
 
   // ✅ FIX: the wallet ledger only ever recorded "Payout requested — ..." at
