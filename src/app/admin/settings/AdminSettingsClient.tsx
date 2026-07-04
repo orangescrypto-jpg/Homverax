@@ -1044,6 +1044,31 @@ export default function AdminSettingsClient() {
           </Button>
         </Section>
 
+        <Section title="Seller Payout Method" subtitle="Controls how seller withdrawals get paid out — separate from how buyers pay in above" icon={Wallet}>
+          <FeatureToggle
+            label="Automatic payout via Paystack"
+            description="Approving a payout immediately sends a real bank transfer via Paystack's Transfers API. Off = manual mode, where you review each request and send the bank transfer yourself."
+            enabled={config.payoutMethod === "paystack"}
+            onChange={(v) => setConfig((c) => ({ ...c, payoutMethod: v ? "paystack" : "manual" }))}
+          />
+          {config.payoutMethod === "paystack" ? (
+            <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mt-3">
+              ⚡ Paystack payout is on — withdrawals are paid automatically the moment you approve them in Payouts. Make sure your Paystack balance is funded and live transfers are unlocked (business KYC completed), or approvals will fail with a clear error.
+            </p>
+          ) : (
+            <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mt-3">
+              🏦 Manual payout is on — you review each request in Payouts, send the bank transfer yourself, then confirm with a reference and proof of payment.
+            </p>
+          )}
+          <Button
+            onClick={() => save("Payout Method", { payoutMethod: config.payoutMethod })}
+            disabled={!!saving} className="gap-2 mt-4"
+          >
+            {saving === "Payout Method" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save Payout Method
+          </Button>
+        </Section>
+
         <Section title="Platform Bank Details" subtitle="Account shown to users for manual payments (subscriptions, boosts)" icon={BanknoteIcon}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
