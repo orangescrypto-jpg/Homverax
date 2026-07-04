@@ -1002,6 +1002,48 @@ export default function AdminSettingsClient() {
         </Section>
 
         {/* ── Bank Details ───────────────────────────────────────────────── */}
+        {/* ── Payment Methods ────────────────────────────────────────────── */}
+        <Section
+          title="Payment Methods"
+          subtitle="Choose which payment method(s) are available for boost, subscription, and escrow checkout. Enable one or more at once — users will pick between them at checkout when more than one is active."
+          icon={CreditCard}
+        >
+          <div className="space-y-3">
+            {([
+              { slug: "manual", label: "Manual Bank Transfer", desc: "User transfers to your bank account and uploads proof; you confirm manually." },
+              { slug: "paystack", label: "Paystack", desc: "Card, bank, USSD, and transfer checkout via Paystack. Requires NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY and PAYSTACK_SECRET_KEY to be set." },
+              { slug: "flutterwave", label: "Flutterwave", desc: "Card, bank, and mobile money checkout via Flutterwave. Requires NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY to be set." },
+            ] as { slug: string; label: string; desc: string }[]).map(({ slug, label, desc }) => {
+              const enabled = config.paymentProviders?.includes(slug) ?? slug === "manual";
+              return (
+                <FeatureToggle
+                  key={slug}
+                  label={label}
+                  description={desc}
+                  enabled={enabled}
+                  onChange={(v) => {
+                    const current = config.paymentProviders?.length ? config.paymentProviders : ["manual"];
+                    let updated = v ? [...new Set([...current, slug])] : current.filter((s) => s !== slug);
+                    // Never allow zero methods enabled — admin must keep at least one.
+                    if (updated.length === 0) {
+                      toast.error("At least one payment method must stay enabled");
+                      return;
+                    }
+                    setConfig((c) => ({ ...c, paymentProviders: updated }));
+                  }}
+                />
+              );
+            })}
+          </div>
+          <Button
+            onClick={() => save("Payment Methods", { paymentProviders: config.paymentProviders })}
+            disabled={!!saving} className="gap-2 mt-4"
+          >
+            {saving === "Payment Methods" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save Payment Methods
+          </Button>
+        </Section>
+
         <Section title="Platform Bank Details" subtitle="Account shown to users for manual payments (subscriptions, boosts)" icon={BanknoteIcon}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
