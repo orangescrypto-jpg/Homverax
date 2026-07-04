@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
     const msgId = newId();
     const autoMessage =
       `Escrow started for "${body.listingTitle ?? "this listing"}" — ` +
-      `payment is pending. I'll share proof of payment here once I've made the transfer.`;
+      `payment is pending confirmation.`;
     await d1Exec(
       "INSERT INTO messages (id, conversation_id, sender_id, receiver_id, listing_id, content, read, created_at) VALUES (?,?,?,?,?,?,?,?)",
       [msgId, convId, buyerId, body.sellerId, body.listingId, autoMessage, 0, now]
