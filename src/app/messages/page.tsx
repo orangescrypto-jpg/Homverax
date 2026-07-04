@@ -32,7 +32,7 @@ import type { Conversation, Message, PropertyListing } from "@/types";
 // ─── Offer card component ─────────────────────────────────────────────────────
 
 function OfferCard({
-  msg, isMe, isSeller, onAccept, onReject, onCounter, convId,
+  msg, isMe, isSeller, onAccept, onReject, onCounter, convId, processingOfferId,
 }: {
   msg: Message;
   isMe: boolean;
@@ -41,9 +41,18 @@ function OfferCard({
   onReject: (offerId: string, price: number) => void;
   onCounter: (offerId: string, price: number) => void;
   convId: string;
+  processingOfferId: string | null;
 }) {
   const od = msg.offerData;
   if (!od) return null;
+
+  // ✅ FIX: Accept/Counter/Decline had no disabled state at all, so a slow
+  // network (or an impatient double-tap) could fire the same offer action
+  // twice — e.g. two "accept" calls racing, or the buyer ending up able to
+  // tap "Pay to Escrow" twice and create duplicate escrow orders. This locks
+  // ALL action buttons on THIS offer card as soon as any one of them is
+  // tapped, until the in-flight request resolves (success or failure).
+  const isThisOfferProcessing = processingOfferId === od.offerId;
 
   const status: string = od.status ?? "pending";
   const isPending  = status === "pending";
@@ -112,17 +121,20 @@ function OfferCard({
       {isSeller && isPending && (
         <div className="flex flex-col gap-1.5">
           <Button size="sm" className="w-full h-7 text-xs gap-1 bg-green-600 hover:bg-green-700"
+            disabled={isThisOfferProcessing}
             onClick={() => onAccept(od.offerId, od.proposedPrice)}>
-            <CheckCircle2 className="w-3 h-3" /> Accept
+            {isThisOfferProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Accept
           </Button>
           <Button size="sm" variant="outline" className="w-full h-7 text-xs gap-1"
+            disabled={isThisOfferProcessing}
             onClick={() => onCounter(od.offerId, od.proposedPrice)}>
             <RefreshCw className="w-3 h-3" /> Counter
           </Button>
           <Button size="sm" variant="outline"
             className="w-full h-7 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50"
+            disabled={isThisOfferProcessing}
             onClick={() => onReject(od.offerId, od.proposedPrice)}>
-            <X className="w-3 h-3" /> Decline
+            {isThisOfferProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />} Decline
           </Button>
         </div>
       )}
@@ -140,8 +152,9 @@ function OfferCard({
       {/* Buyer: countered offer — accept the counter */}
       {!isSeller && isCountered && od.counterPrice && (
         <Button size="sm" className="w-full h-7 text-xs gap-1 bg-blue-600 hover:bg-blue-700"
+          disabled={isThisOfferProcessing}
           onClick={() => onAccept(od.offerId, od.counterPrice ?? 0)}>
-          <CheckCircle2 className="w-3 h-3" /> Accept Counter
+          {isThisOfferProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Accept Counter
         </Button>
       )}
     </div>
@@ -410,6 +423,10 @@ export default function MessagesPage() {
   const [offerSystemEnabled, setOfferSystemEnabled] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [counterModal, setCounterModal] = useState<{ offerId: string; price: number } | null>(null);
+  // ✅ Locks all offer action buttons (Accept/Counter/Decline) for a given
+  // offerId while a request is in flight, so a double-tap or slow network
+  // can't fire the same offer action twice (e.g. duplicate escrow orders).
+  const [processingOfferId, setProcessingOfferId] = useState<string | null>(null);
   const [showAttachListingModal, setShowAttachListingModal] = useState(false);
   const [attachingListing, setAttachingListing] = useState(false);
 
@@ -584,22 +601,30 @@ export default function MessagesPage() {
 
   const handleAcceptOffer = async (offerId: string, price: number) => {
     if (!user || !activeConvId || !otherParticipant) return;
+    if (processingOfferId) return; // ✅ ignore taps while another action on any offer is in flight
+    setProcessingOfferId(offerId);
     try {
       await acceptOfferFromChat(offerId, activeConvId, user.id, otherParticipant.id);
       toast.success("Offer accepted! Buyer can now proceed to escrow.");
     } catch { toast.error("Failed to accept offer"); }
+    finally { setProcessingOfferId(null); }
   };
 
   const handleRejectOffer = async (offerId: string, price: number) => {
     if (!user || !activeConvId || !otherParticipant) return;
+    if (processingOfferId) return;
+    setProcessingOfferId(offerId);
     try {
       await rejectOfferFromChat(offerId, activeConvId, user.id, otherParticipant.id);
       toast.success("Offer declined");
     } catch { toast.error("Failed to decline offer"); }
+    finally { setProcessingOfferId(null); }
   };
 
   const handleCounterOffer = async (offerId: string, counterPrice: number, note: string) => {
     if (!user || !activeConvId || !otherParticipant) return;
+    if (processingOfferId) return;
+    setProcessingOfferId(offerId);
     try {
       const buyerMsg = messages.find(m => m.offerData?.offerId === offerId);
       const originalPrice = buyerMsg?.offerData?.proposedPrice ?? 0;
@@ -607,6 +632,7 @@ export default function MessagesPage() {
       setCounterModal(null);
       toast.success("Counter-offer sent!");
     } catch { toast.error("Failed to send counter-offer"); }
+    finally { setProcessingOfferId(null); }
   };
 
   // ✅ FIX: Reliable seller check — convSellerId is now stored on conversation doc
@@ -810,6 +836,7 @@ export default function MessagesPage() {
                               onReject={handleRejectOffer}
                               onCounter={(offerId, price) => setCounterModal({ offerId, price })}
                               convId={activeConvId}
+                              processingOfferId={processingOfferId}
                             />
                             <p className={cn("text-[10px] mt-1 text-muted-foreground", isMe ? "text-right" : "text-left")}>
                               {timeAgo(msg.createdAt)}
