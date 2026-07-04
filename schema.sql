@@ -230,12 +230,24 @@ CREATE TABLE IF NOT EXISTS payouts (
   bank_name      TEXT NOT NULL,
   account_number TEXT NOT NULL,
   account_name   TEXT NOT NULL,
+  bank_code          TEXT,
   status         TEXT NOT NULL DEFAULT 'pending',
   note           TEXT,
   reference      TEXT,
+  proof_url          TEXT,   -- manual mode: screenshot/receipt admin attaches when marking paid
+  payout_method      TEXT,   -- 'manual' | 'paystack' — which path actually paid this out
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   processed_at   TEXT
 );
+
+-- ─── Migration: existing databases created before bank_code/proof_url/
+-- payout_method existed. Run these three ALTER statements manually against
+-- your existing D1 database (e.g. via `wrangler d1 execute`) — schema.sql
+-- isn't auto-applied on deploy in this project. If a column already exists,
+-- D1 will error on that one line; just skip it and run the rest.
+ALTER TABLE payouts ADD COLUMN bank_code TEXT;
+ALTER TABLE payouts ADD COLUMN proof_url TEXT;
+ALTER TABLE payouts ADD COLUMN payout_method TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_payouts_user   ON payouts (user_id);
 CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts (status);
