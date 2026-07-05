@@ -193,13 +193,21 @@ export async function GET(
     ["HomveraX platform fee", money(escrow.platformFee)],
     ["Amount released to seller", money(escrow.sellerReceives)],
   ];
-  rowsData2.forEach(([label, value], i) => {
-    const isTotal = i === rowsData2.length - 1;
-    drawText(label, marginX, y, { size: 10, f: isTotal ? bold : font, color: isTotal ? primary : muted });
-    drawText(value, width - marginX - 120, y, { size: 10, f: isTotal ? bold : font, color: isTotal ? primary : muted });
-    y -= 18;
-  });
-  y -= 15;
+  // Buyers have no business seeing the platform fee or the seller's payout —
+  // that's between HomveraX and the seller. Only the seller and staff see
+  // this section; buyers' receipts skip straight from "Total paid by buyer"
+  // to the timeline, with no gap left behind since y only advances for the
+  // rows actually drawn.
+  const isSellerViewer = user.id === escrow.sellerId || isStaff;
+  if (isSellerViewer) {
+    rowsData2.forEach(([label, value], i) => {
+      const isTotal = i === rowsData2.length - 1;
+      drawText(label, marginX, y, { size: 10, f: isTotal ? bold : font, color: isTotal ? primary : muted });
+      drawText(value, width - marginX - 120, y, { size: 10, f: isTotal ? bold : font, color: isTotal ? primary : muted });
+      y -= 18;
+    });
+    y -= 15;
+  }
   drawLine(y);
   y -= 25;
 
