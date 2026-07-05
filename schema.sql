@@ -123,6 +123,19 @@ CREATE TABLE IF NOT EXISTS escrows (
   seller_id  TEXT NOT NULL,
   amount     REAL NOT NULL,
   status     TEXT DEFAULT 'pending',
+  -- status now also includes 'payment_rejected' (admin rejected the
+  -- buyer's uploaded proof of payment; distinct from 'pending' so the
+  -- buyer sees a clear "rejected — retry" banner instead of the plain
+  -- unpaid screen). No column change needed — status is just TEXT.
+  --
+  -- meta (JSON) gained 4 new keys, written by adminRejectTransfer() in
+  -- services/escrow.ts — no ALTER TABLE needed, existing rows are
+  -- unaffected and simply omit these keys until first rejected:
+  --   rejectionReason  TEXT  — one of: amount_mismatch | screenshot_invalid |
+  --                            reference_not_found | duplicate_submission | other
+  --   rejectionNote    TEXT  — free-text note admin typed, shown to buyer in email
+  --   rejectedBy       TEXT  — user id of the admin who rejected
+  --   rejectedAt       TEXT  — ISO timestamp of rejection
   meta       TEXT,
   release_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -214,6 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_receiver  ON messages (receiver_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id);
 CREATE INDEX IF NOT EXISTS idx_escrows_buyer      ON escrows (buyer_id);
 CREATE INDEX IF NOT EXISTS idx_escrows_seller     ON escrows (seller_id);
+CREATE INDEX IF NOT EXISTS idx_escrows_status     ON escrows (status);
 CREATE INDEX IF NOT EXISTS idx_reviews_agent      ON reviews (agent_id);
 CREATE INDEX IF NOT EXISTS idx_saved_listings_user ON saved_listings (user_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user     ON wallet_transactions (user_id);
