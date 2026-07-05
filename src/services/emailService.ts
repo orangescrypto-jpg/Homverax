@@ -76,6 +76,19 @@ export async function sendEscrowFundedEmail(params: {
   ]);
 }
 
+// ─── 1b. Payment proof rejected ────────────────────────────────────────────────
+
+export async function sendPaymentRejectedEmail(params: {
+  buyerEmail: string;
+  buyerName: string;
+  listingTitle: string;
+  reasonLabel: string;
+  note?: string;
+  escrowId: string;
+}): Promise<void> {
+  await dispatchEmail("payment_rejected_buyer", params.buyerEmail, params);
+}
+
 // ─── 2. Escrow released ───────────────────────────────────────────────────────
 
 export async function sendEscrowReleasedEmail(params: {
