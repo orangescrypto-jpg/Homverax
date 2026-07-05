@@ -131,6 +131,12 @@ export async function sendPayoutApprovedEmail(params: {
   amount: number;
   bankName: string;
   accountNumber: string;
+  reference?: string;
+  // Manual mode only — link to the transfer screenshot/receipt admin
+  // attached when approving. Lets the seller verify the payment themselves
+  // instead of taking the email's word for it.
+  proofUrl?: string;
+  payoutMethod?: "manual" | "paystack";
 }): Promise<void> {
   await dispatchEmail("payout_approved", params.userEmail, params);
 }
