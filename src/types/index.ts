@@ -97,6 +97,7 @@ export interface PropertyListing {
 export type EscrowStatus =
   | "pending"
   | "awaiting_confirmation"
+  | "payment_rejected"
   | "funded"
   | "held"
   | "inspection"
@@ -106,6 +107,24 @@ export type EscrowStatus =
   | "refunded"
   | "cancelled"
   | "expired";
+
+// Preset reasons shown to the admin when rejecting a buyer's payment proof.
+// Kept here (not just in the admin UI) so services/emailService.ts and any
+// buyer-facing status banner can share the same canonical label set.
+export type PaymentRejectionReason =
+  | "amount_mismatch"
+  | "screenshot_invalid"
+  | "reference_not_found"
+  | "duplicate_submission"
+  | "other";
+
+export const PAYMENT_REJECTION_REASON_LABELS: Record<PaymentRejectionReason, string> = {
+  amount_mismatch: "Amount doesn't match",
+  screenshot_invalid: "Screenshot unreadable / invalid",
+  reference_not_found: "Reference not found in bank records",
+  duplicate_submission: "Duplicate / already confirmed",
+  other: "Other",
+};
 
 export interface EscrowTransaction {
   id: string;
@@ -141,6 +160,12 @@ export interface EscrowTransaction {
   disputeOpenedAt?: string;
   resolvedAt?: string;
   notes?: string;
+  // Payment-rejection audit trail — set when admin rejects a buyer's
+  // uploaded proof of payment via the Escrow Management page.
+  rejectionReason?: PaymentRejectionReason;
+  rejectionNote?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
