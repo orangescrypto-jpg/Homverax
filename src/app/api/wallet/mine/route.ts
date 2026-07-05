@@ -21,7 +21,7 @@ import { getPlatformConfig } from "@/services/platformSettings";
 interface WalletRow { user_id: string; balance: number; updated_at: string; }
 interface TxRow {
   id: string; user_id: string; type: string; amount: number;
-  description: string; reference: string | null; created_at: string;
+  description: string; reference: string | null; proof_url: string | null; created_at: string;
 }
 
 async function requireUser(request: NextRequest) {
@@ -86,7 +86,8 @@ export async function GET(request: NextRequest) {
   );
   const transactions = txRows.map((r) => ({
     id: r.id, userId: r.user_id, type: r.type, amount: r.amount,
-    description: r.description, reference: r.reference ?? undefined, createdAt: r.created_at,
+    description: r.description, reference: r.reference ?? undefined,
+    proofUrl: r.proof_url ?? undefined, createdAt: r.created_at,
   }));
 
   const bankRows = await d1Query<{ bank_name: string | null; account_number: string | null; account_name: string | null; bank_code: string | null }>(
