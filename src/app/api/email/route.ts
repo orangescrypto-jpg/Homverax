@@ -380,16 +380,32 @@ function tmplBookingConfirmedSeller(d: Record<string, unknown>, appName: string,
 }
 
 function tmplPayoutApproved(d: Record<string, unknown>, appName: string, supportEmail: string): string {
+  const isManual = d.payoutMethod !== "paystack";
+  const proofUrl = typeof d.proofUrl === "string" && d.proofUrl.trim() ? d.proofUrl.trim() : null;
+  const reference = typeof d.reference === "string" && d.reference.trim() ? d.reference.trim() : null;
+
+  // Manual + proof attached means the transfer has already been sent, not
+  // "processing" — the old copy said "being processed... 1-3 business
+  // days" regardless of mode, which was misleading for a manual payout
+  // admin had already completed and attached proof for.
+  const statusLine = isManual && proofUrl
+    ? "Your payout has been sent. See the proof of transfer below."
+    : "Your payout request has been approved and is being processed. Funds will be transferred to your bank account within 1–3 business days.";
+
   const body = `
     ${greeting(String(d.userName ?? ""))}
-    ${para(`Your payout request has been approved and is being processed. Funds will be transferred to your bank account within 1–3 business days.`)}
+    ${para(statusLine)}
     ${infoTable(
       infoRow("Amount", naira(d.amount)) +
       infoRow("Bank", esc(d.bankName)) +
       infoRow("Account Number", esc(d.accountNumber)) +
-      infoRow("Status", "💸 Approved & processing")
+      (reference ? infoRow("Reference", esc(reference)) : "") +
+      infoRow("Status", isManual && proofUrl ? "✅ Sent" : "💸 Approved & processing")
     )}
-    ${highlightBox(`Transfers typically arrive within <strong>1–3 business days</strong> depending on your bank. If you do not receive the funds after 3 business days, please contact support.`)}
+    ${proofUrl
+      ? highlightBox(`<strong>Proof of transfer:</strong> <a href="${esc(proofUrl)}" style="color:${BRAND.indigo};">View the receipt/screenshot</a> admin uploaded for this payout.`)
+      : highlightBox(`Transfers typically arrive within <strong>1–3 business days</strong> depending on your bank. If you do not receive the funds after 3 business days, please contact support.`)
+    }
     ${divider()}
     ${para(`Questions? Contact <a href="mailto:${supportEmail}" style="color:${BRAND.indigo};">${supportEmail}</a>.`)}
   `;
