@@ -36,14 +36,49 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rows = await d1Query<WalletRow>("SELECT * FROM wallets WHERE user_id = ?", [user.id]);
-  let wallet;
-  if (rows.length) {
-    wallet = { userId: user.id, balance: rows[0].balance, pendingBalance: 0, totalEarned: 0, totalPlatformFeesDeducted: 0, updatedAt: rows[0].updated_at };
-  } else {
-    const now = new Date().toISOString();
-    await d1Exec("INSERT INTO wallets (user_id, balance, updated_at) VALUES (?, 0, ?)", [user.id, now]);
-    wallet = { userId: user.id, balance: 0, pendingBalance: 0, totalEarned: 0, totalPlatformFeesDeducted: 0, updatedAt: now };
+  const balance = rows.length ? rows[0].balance : 0;
+  const walletUpdatedAt = rows.length ? rows[0].updated_at : new Date().toISOString();
+  if (!rows.length) {
+    await d1Exec("INSERT INTO wallets (user_id, balance, updated_at) VALUES (?, 0, ?)", [user.id, walletUpdatedAt]);
   }
+
+  // ✅ FIX: pendingBalance and totalEarned were hardcoded to 0 here — never
+  // actually computed — so both cards on the wallet page always showed ₦0
+  // regardless of real activity, even though "Available Balance" (read
+  // straight from the wallets table) worked fine. Both are now derived
+  // from the wallet_transactions ledger:
+  //   totalEarned    = lifetime sum of "credit" transactions (money that
+  //                    has landed in the wallet from released escrows),
+  //                    regardless of how much has since been withdrawn.
+  //   pendingBalance = sum of "hold" transactions (escrow funds the seller
+  //                    has acknowledged but that haven't been released
+  //                    yet) minus any "debit" reversals (e.g. a held
+  //                    escrow that was later refunded to the buyer instead
+  //                    of released to the seller).
+  const ledgerRows = await d1Query<{ type: string; amount: number }>(
+    "SELECT type, amount FROM wallet_transactions WHERE user_id = ?",
+    [user.id]
+  );
+  const totalEarned = ledgerRows
+    .filter((r) => r.type === "credit")
+    .reduce((sum, r) => sum + r.amount, 0);
+  const pendingBalance = ledgerRows
+    .filter((r) => r.type === "hold")
+    .reduce((sum, r) => sum + r.amount, 0)
+    - ledgerRows
+    .filter((r) => r.type === "debit")
+    .reduce((sum, r) => sum + r.amount, 0);
+
+  const wallet = {
+    userId: user.id,
+    balance,
+    pendingBalance: Math.max(0, pendingBalance),
+    totalEarned,
+    totalPlatformFeesDeducted: ledgerRows
+      .filter((r) => r.type === "fee_deduction")
+      .reduce((sum, r) => sum + r.amount, 0),
+    updatedAt: walletUpdatedAt,
+  };
 
   const txRows = await d1Query<TxRow>(
     "SELECT * FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20",
