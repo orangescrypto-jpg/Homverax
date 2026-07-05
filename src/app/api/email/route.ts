@@ -110,6 +110,7 @@ function buildSubject(template: string, data: Record<string, unknown>): string {
   const subjects: Record<string, string> = {
     escrow_initiated_seller: `🛒 A Buyer Wants — ${data.listingTitle}`,
     escrow_funded_buyer:     `✅ Payment Confirmed — ${data.listingTitle}`,
+    payment_rejected_buyer:  `⚠️ Payment Rejected — ${data.listingTitle}`,
     escrow_funded_seller:    `💰 Funds Received in Escrow — ${data.listingTitle}`,
     escrow_released_seller:  `🎉 Funds Released — ${data.listingTitle}`,
     escrow_released_buyer:   `✅ Transaction Complete — ${data.listingTitle}`,
@@ -292,6 +293,25 @@ function tmplEscrowFundedSeller(d: Record<string, unknown>, appName: string, sup
   return layout(appName, supportEmail, BRAND.gold, "Funds in Escrow", body);
 }
 
+function tmplPaymentRejectedBuyer(d: Record<string, unknown>, appName: string, supportEmail: string): string {
+  const note = typeof d.note === "string" && d.note.trim() ? d.note.trim() : null;
+  const body = `
+    ${greeting(String(d.buyerName ?? ""))}
+    ${para(`We reviewed the payment proof you submitted for <strong>${esc(d.listingTitle)}</strong>, but we weren't able to confirm it.`)}
+    ${infoTable(
+      infoRow("Listing", esc(d.listingTitle)) +
+      infoRow("Reason", esc(d.reasonLabel)) +
+      (note ? infoRow("Admin note", esc(note)) : "") +
+      infoRow("Escrow ID", `#${esc(d.escrowId)}`) +
+      infoRow("Status", "⚠️ Payment rejected — action needed")
+    )}
+    ${highlightBox(`<strong>What to do next:</strong> Please double-check your transfer and upload a fresh screenshot or reference. Your order is still reserved — this is not a cancellation.`, "#fee2e2", "#991b1b")}
+    ${divider()}
+    ${para(`If you believe this is a mistake, contact us at <a href="mailto:${supportEmail}" style="color:${BRAND.indigo};">${supportEmail}</a>.`)}
+  `;
+  return layout(appName, supportEmail, "#991b1b", "Payment Rejected", body);
+}
+
 function tmplEscrowReleasedSeller(d: Record<string, unknown>, appName: string, supportEmail: string): string {
   const body = `
     ${greeting(String(d.sellerName ?? ""))}
@@ -420,6 +440,7 @@ function buildHtml(
   switch (template) {
     case "escrow_initiated_seller":  return tmplEscrowInitiatedSeller(data, appName, supportEmail);
     case "escrow_funded_buyer":     return tmplEscrowFundedBuyer(data, appName, supportEmail);
+    case "payment_rejected_buyer":  return tmplPaymentRejectedBuyer(data, appName, supportEmail);
     case "escrow_funded_seller":    return tmplEscrowFundedSeller(data, appName, supportEmail);
     case "escrow_released_seller":  return tmplEscrowReleasedSeller(data, appName, supportEmail);
     case "escrow_released_buyer":   return tmplEscrowReleasedBuyer(data, appName, supportEmail);
