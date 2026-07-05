@@ -26,11 +26,13 @@ import { usePaymentMethod } from "@/components/payment/PaymentMethodPicker";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { EscrowTransaction } from "@/types";
+import { PAYMENT_REJECTION_REASON_LABELS } from "@/types";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_COLOR: Record<string, string> = {
   pending:                "text-yellow-600 bg-yellow-50 border-yellow-200",
   awaiting_confirmation:  "text-blue-600 bg-blue-50 border-blue-200",
+  payment_rejected:       "text-red-600 bg-red-50 border-red-200",
   funded:                 "text-indigo-600 bg-indigo-50 border-indigo-200",
   held:                   "text-purple-600 bg-purple-50 border-purple-200",
   inspection:             "text-orange-600 bg-orange-50 border-orange-200",
@@ -254,7 +256,13 @@ export default function EscrowDetailPage() {
   const DISPLAY_STEPS = ESCROW_STEPS.filter((s) =>
     !["disputed", "resolved", "refunded"].includes(s.key)
   );
-  const currentStepIdx = DISPLAY_STEPS.findIndex((s) => s.key === escrow.status);
+  // "payment_rejected" isn't one of the forward-progress steps, but it
+  // logically sits at "Transfer Submitted" — the buyer did submit, it just
+  // wasn't accepted. Pinning it there (rather than -1/no-highlight) avoids
+  // the stepper going blank, as it did before this fix.
+  const currentStepIdx = escrow.status === "payment_rejected"
+    ? DISPLAY_STEPS.findIndex((s) => s.key === "awaiting_confirmation")
+    : DISPLAY_STEPS.findIndex((s) => s.key === escrow.status);
 
   return (
     <DashboardLayout>
@@ -305,7 +313,8 @@ export default function EscrowDetailPage() {
                       <div className="flex items-center w-full">
                         <div className={cn(
                           "w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all",
-                          done   ? "bg-primary border-primary" :
+                          done && escrow.status !== "payment_rejected" ? "bg-primary border-primary" :
+                          active && escrow.status === "payment_rejected" ? "bg-red-50 border-red-500" :
                           active ? "bg-primary/10 border-primary" :
                                    "bg-secondary border-border"
                         )}>
@@ -370,6 +379,19 @@ export default function EscrowDetailPage() {
                   </span>
                 </div>
               ))}
+            {/* Payment rejected — shown with a warning icon, not the green
+                checkmark used above, since this isn't a forward-progress
+                step. Kept separate from the main list so it's never hidden
+                even if the buyer later resubmits and moves forward again. */}
+            {escrow.rejectedAt && (
+              <div className="flex items-center gap-3 text-sm">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <span className="text-foreground">Payment rejected by HomveraX</span>
+                <span className="text-muted-foreground text-xs ml-auto">
+                  {timeAgo(escrow.rejectedAt)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* ── Receipt download — only once funds have actually been
@@ -612,6 +634,153 @@ export default function EscrowDetailPage() {
                 <p className="text-xs text-blue-600 dark:text-blue-300 mt-3">
                   Questions? Email <a href="mailto:escrow@homverax.com" className="underline">escrow@homverax.com</a> with your reference number.
                 </p>
+              </div>
+            )}
+
+            {/* ── BUYER: Payment rejected — show reason + let them resubmit
+                on this SAME order, no new escrow row created. Reuses the
+                same transferRef/receiptFile state and submitTransferProof()
+                call as the initial "pending" flow above; since receiptFile
+                is component state (not persisted), the buyer is always
+                forced to attach a fresh file here — the old rejected
+                screenshot can't be silently resubmitted. ─────────────────── */}
+            {isBuyer && escrow.status === "payment_rejected" && (
+              <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-700/30 rounded-2xl p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-red-800 dark:text-red-400">
+                      Payment Rejected — Please Resubmit
+                    </p>
+                    <p className="text-sm text-red-600 dark:text-red-300 mt-0.5">
+                      Your order is still reserved. Fix the issue below and resubmit — no need to start over.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white/60 dark:bg-white/5 rounded-xl px-4 py-3 text-sm mb-4">
+                  <p className="text-xs text-muted-foreground mb-1">Reason</p>
+                  <p className="font-semibold text-red-700 dark:text-red-400">
+                    {escrow.rejectionReason
+                      ? PAYMENT_REJECTION_REASON_LABELS[escrow.rejectionReason]
+                      : "Payment could not be confirmed"}
+                  </p>
+                  {escrow.rejectionNote && (
+                    <>
+                      <p className="text-xs text-muted-foreground mt-2.5 mb-1">Note from HomveraX</p>
+                      <p className="text-foreground">{escrow.rejectionNote}</p>
+                    </>
+                  )}
+                </div>
+
+                {/* Bank details — repeated here so the buyer doesn't have
+                    to scroll back up while fixing their transfer */}
+                <div className="space-y-3 mb-4">
+                  {[
+                    { label: "Bank",           value: bank.bankName },
+                    { label: "Account Number", value: bank.accountNumber },
+                    { label: "Account Name",   value: bank.accountName },
+                    { label: "Reference",      value: `ESCROW-${escrow.id.slice(0, 8).toUpperCase()}`, highlight: true },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className={cn(
+                        "flex items-center justify-between gap-3 px-4 py-3 rounded-xl",
+                        item.highlight
+                          ? "bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700/30"
+                          : "bg-white/60 dark:bg-white/5"
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">{item.label}</p>
+                        <p className={cn(
+                          "text-sm font-semibold mt-0.5",
+                          item.highlight ? "text-amber-800 dark:text-amber-400 font-mono" : "text-foreground"
+                        )}>
+                          {item.value}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => copyText(item.value, item.label)}
+                        className="p-1.5 rounded-lg hover:bg-white/50 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        title={`Copy ${item.label}`}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Resubmit form — same fields/handler as the initial
+                    submission, always starts empty so a fresh screenshot
+                    is required. */}
+                <div className="space-y-3 bg-white/60 dark:bg-white/5 p-4 rounded-xl mb-4">
+                  <div>
+                    <Label htmlFor="resubmit-ref" className="text-sm font-medium text-foreground mb-1.5 block">
+                      Transfer reference / teller number <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Input
+                      id="resubmit-ref"
+                      placeholder="e.g. TRF/123456789 or your teller number"
+                      value={transferRef}
+                      onChange={(e) => setTransferRef(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="resubmit-receipt" className="text-sm font-medium text-foreground mb-1.5 block">
+                      New payment receipt / screenshot <span className="text-destructive font-normal">(required)</span>
+                    </Label>
+                    <label
+                      htmlFor="resubmit-receipt"
+                      className="flex items-center gap-2 border border-dashed border-border rounded-xl px-3 py-2.5 text-sm cursor-pointer hover:bg-secondary/50 transition-colors"
+                    >
+                      {receiptFile ? (
+                        <>
+                          <FileImage className="w-4 h-4 text-primary shrink-0" />
+                          <span className="truncate text-foreground">{receiptFile.name}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="text-muted-foreground">Attach a new photo or screenshot</span>
+                        </>
+                      )}
+                    </label>
+                    <input
+                      id="resubmit-receipt"
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Button
+                    className="w-full gap-2 bg-red-600 hover:bg-red-700"
+                    disabled={isActing || isUploadingReceipt || !receiptFile}
+                    onClick={handleSubmitTransfer}
+                  >
+                    {(isActing || isUploadingReceipt)
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <CheckCircle2 className="w-4 h-4" />
+                    }
+                    {isUploadingReceipt ? "Uploading receipt…" : "Resubmit Payment Proof"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+                    disabled={isCancelling}
+                    onClick={handleCancelOrder}
+                  >
+                    {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Cancel Order Instead
+                  </Button>
+                </div>
               </div>
             )}
 
