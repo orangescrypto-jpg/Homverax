@@ -9,15 +9,18 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { getAllEscrows, adminConfirmFunding, resolveDispute, releaseToSeller, getSellerBankDetails, adminDeleteEscrow } from "@/services/escrow";
+import { getAllEscrows, adminConfirmFunding, adminRejectTransfer, resolveDispute, releaseToSeller, getSellerBankDetails, adminDeleteEscrow } from "@/services/escrow";
 import { getPlatformConfig, type BankDetails } from "@/services/platformSettings";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { EscrowTransaction } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
+import type { EscrowTransaction, PaymentRejectionReason } from "@/types";
+import { PAYMENT_REJECTION_REASON_LABELS } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
   pending:                "bg-yellow-100 text-yellow-700",
   awaiting_confirmation:  "bg-blue-100 text-blue-700 font-bold",
+  payment_rejected:       "bg-red-100 text-red-700 font-bold",
   funded:                 "bg-indigo-100 text-indigo-700",
   held:                   "bg-purple-100 text-purple-700",
   inspection:             "bg-orange-100 text-orange-700",
@@ -28,6 +31,10 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function AdminEscrowsPage() {
+  const { user } = useAuth();
+  const [rejectTarget, setRejectTarget] = useState<EscrowTransaction | null>(null);
+  const [rejectReason, setRejectReason] = useState<PaymentRejectionReason>("amount_mismatch");
+  const [rejectNote, setRejectNote] = useState("");
   const [escrows, setEscrows] = useState<EscrowTransaction[]>([]);
   const [filtered, setFiltered] = useState<EscrowTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,16 +112,37 @@ export default function AdminEscrowsPage() {
     }
   };
 
-  const handleRejectTransfer = async (escrow: EscrowTransaction) => {
+  // Opens the reject-reason modal instead of firing immediately — an admin
+  // rejecting a payment always needs to say why, both for the buyer's email
+  // and for the audit trail on the escrow row.
+  const handleRejectTransfer = (escrow: EscrowTransaction) => {
+    setRejectReason("amount_mismatch");
+    setRejectNote("");
+    setRejectTarget(escrow);
+  };
+
+  const submitRejectTransfer = async () => {
+    if (!rejectTarget) return;
+    const escrow = rejectTarget;
     setActing(escrow.id);
     try {
-      // Move back to pending so buyer can re-submit
-      const { updateEscrowStatus } = await import("@/services/escrow");
-      await updateEscrowStatus(escrow.id, "pending");
+      await adminRejectTransfer(escrow.id, rejectReason, rejectNote.trim() || undefined, user?.id ?? "");
       setEscrows((prev) =>
-        prev.map((e) => e.id === escrow.id ? { ...e, status: "pending" } : e)
+        prev.map((e) =>
+          e.id === escrow.id
+            ? {
+                ...e,
+                status: "payment_rejected",
+                rejectionReason: rejectReason,
+                rejectionNote: rejectNote.trim() || undefined,
+                rejectedBy: user?.id,
+                rejectedAt: new Date().toISOString(),
+              }
+            : e
+        )
       );
-      toast.success("Transfer rejected — buyer notified to re-submit");
+      toast.success("Payment rejected — buyer emailed and notified to re-submit");
+      setRejectTarget(null);
     } catch {
       toast.error("Failed to reject transfer");
     } finally {
@@ -204,6 +232,7 @@ export default function AdminEscrowsPage() {
       <div className="flex gap-1.5 flex-wrap mb-5">
         {[
           { key: "awaiting_confirmation", label: "Awaiting Confirmation" },
+          { key: "payment_rejected", label: "Payment Rejected" },
           { key: "all",       label: "All" },
           { key: "pending",   label: "Pending" },
           { key: "funded",    label: "Funded" },
@@ -566,6 +595,81 @@ export default function AdminEscrowsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Reject payment modal — preset reason + optional free text */}
+      {rejectTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setRejectTarget(null)}
+        >
+          <div
+            className="bg-background rounded-xl shadow-lg max-w-md w-full p-5"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-lg">Reject Payment</h3>
+              <button onClick={() => setRejectTarget(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4 truncate">
+              {rejectTarget.listingTitle}
+            </p>
+
+            <label className="text-sm font-medium mb-1.5 block">Reason</label>
+            <div className="flex flex-col gap-1.5 mb-4">
+              {(Object.keys(PAYMENT_REJECTION_REASON_LABELS) as PaymentRejectionReason[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setRejectReason(key)}
+                  className={cn(
+                    "text-left px-3 py-2 rounded-lg border text-sm transition-colors",
+                    rejectReason === key
+                      ? "border-destructive bg-destructive/5 text-destructive font-medium"
+                      : "border-border hover:bg-secondary"
+                  )}
+                >
+                  {PAYMENT_REJECTION_REASON_LABELS[key]}
+                </button>
+              ))}
+            </div>
+
+            <label className="text-sm font-medium mb-1.5 block">
+              Note to buyer {rejectReason === "other" && <span className="text-destructive">(required)</span>}
+            </label>
+            <Textarea
+              value={rejectNote}
+              onChange={(ev) => setRejectNote(ev.target.value)}
+              placeholder="e.g. The amount you sent is ₦10,000 short of the total due."
+              className="text-sm mb-4"
+              rows={3}
+            />
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setRejectTarget(null)}
+                disabled={acting === rejectTarget.id}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 gap-2 bg-destructive hover:bg-destructive/90"
+                disabled={acting === rejectTarget.id || (rejectReason === "other" && !rejectNote.trim())}
+                onClick={submitRejectTransfer}
+              >
+                {acting === rejectTarget.id
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <X className="w-4 h-4" />
+                }
+                Reject & Notify Buyer
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </DashboardLayout>
