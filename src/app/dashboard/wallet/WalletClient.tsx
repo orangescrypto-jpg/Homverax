@@ -336,7 +336,19 @@ export default function WalletPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{t.description}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleDateString("en-NG", { dateStyle: "medium" })}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleDateString("en-NG", { dateStyle: "medium" })}</p>
+                      {t.proofUrl && (
+                        <a
+                          href={t.proofUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-primary underline"
+                        >
+                          View proof
+                        </a>
+                      )}
+                    </div>
                   </div>
                   <p className={cn("text-sm font-bold shrink-0", isPositive ? "text-green-600" : "text-red-500")}>
                     {isPositive ? "+" : "-"}{formatCurrency(t.amount)}
