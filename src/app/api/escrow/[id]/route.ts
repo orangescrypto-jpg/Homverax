@@ -17,7 +17,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { d1Query, d1Exec } from "@/lib/d1";
 import { createNotification } from "@/services/notifications";
-import { creditWalletOnRelease } from "@/services/wallet";
+import { creditWalletOnRelease, holdFundsForSeller, removePendingOnRefund } from "@/services/wallet";
 import { sendEscrowReleasedEmail } from "@/services/emailService";
 import type { EscrowTransaction, EscrowStatus } from "@/types";
 
@@ -140,6 +140,7 @@ export async function PATCH(
 
   const now = new Date().toISOString();
   const wasAlreadyReleased = result.row.status === "released";
+  const wasAlreadyHeld = result.row.status === "held";
   await d1Exec("UPDATE escrows SET status = ?, updated_at = ? WHERE id = ?", [body.status, now, id]);
 
   if (body.extra && typeof body.extra === "object") {
@@ -147,6 +148,32 @@ export async function PATCH(
     try { meta = JSON.parse(result.row.meta || "{}"); } catch {}
     const merged = { ...meta, ...body.extra };
     await d1Exec("UPDATE escrows SET meta = ?, updated_at = ? WHERE id = ?", [JSON.stringify(merged), now, id]);
+  }
+
+  // ── Record "funds held" in the seller's wallet ledger ─────────────────────
+  // ✅ FIX: holdFundsForSeller() existed in services/wallet.ts but was never
+  // actually called anywhere — clicking "Confirm Receipt of Payment" (seller
+  // action, moves escrow to "held") never wrote a "hold" transaction, so
+  // the wallet page's "Pending (In Escrow)" figure had nothing to sum and
+  // always showed ₦0, even with money genuinely sitting in escrow. Guarded
+  // by wasAlreadyHeld so a retried PATCH can't double-count the same hold.
+  if (body.status === "held" && !wasAlreadyHeld) {
+    try {
+      await holdFundsForSeller(result.row.seller_id, result.row.amount, id);
+    } catch (err) {
+      console.warn("[escrow PATCH] hold ledger entry error:", err);
+    }
+  }
+
+  // ── Reverse a pending hold if the escrow is refunded/cancelled instead
+  // of released — otherwise "Pending (In Escrow)" would keep counting money
+  // that was actually returned to the buyer, never released to the seller.
+  if (["refunded", "cancelled"].includes(body.status) && ["held", "inspection", "disputed"].includes(result.row.status)) {
+    try {
+      await removePendingOnRefund(result.row.seller_id, result.row.amount, id);
+    } catch (err) {
+      console.warn("[escrow PATCH] pending-reversal ledger entry error:", err);
+    }
   }
 
   // ── Credit seller wallet + send released email (buyer-triggered path) ────
