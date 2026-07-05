@@ -13,6 +13,7 @@ import {
   type SellerWallet, type WalletTransaction,
 } from "@/services/wallet";
 import { formatCurrency, cn } from "@/lib/utils";
+import { getPlatformConfig } from "@/services/platformSettings";
 import { toast } from "sonner";
 
 const TYPE_CONFIG = {
@@ -37,6 +38,7 @@ export default function WalletPage() {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [banksLoading, setBanksLoading] = useState(true);
   const [banksError, setBanksError] = useState(false);
+  const [payoutMethod, setPayoutMethod] = useState<"manual" | "paystack">("manual");
   const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState(user?.bankName ?? "");
   const [accountNumber, setAccountNumber] = useState(user?.accountNumber ?? "");
@@ -56,29 +58,46 @@ export default function WalletPage() {
       .finally(() => setIsLoading(false));
   }, [user]);
 
-  // Load Paystack's bank list once — gives us the bank_code Paystack's
-  // Transfers API requires. A free-text bank name isn't enough for
-  // automatic payout to work.
+  // Load payout mode first — the Paystack bank list is only ever needed
+  // when the admin has switched payoutMethod to "paystack". In "manual"
+  // mode (the default, and the only mode that works without a configured
+  // PAYSTACK_SECRET_KEY), we skip /api/payments/banks entirely so sellers
+  // never see a "Could not load bank list" error for a feature they're not
+  // even using — they just type their bank name as free text instead.
   useEffect(() => {
-    fetch("/api/payments/banks")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.banks) setBanks(data.banks);
-        else setBanksError(true);
+    getPlatformConfig()
+      .then((cfg) => {
+        const mode = cfg.payoutMethod ?? "manual";
+        setPayoutMethod(mode);
+        if (mode !== "paystack") {
+          setBanksLoading(false);
+          return;
+        }
+        fetch("/api/payments/banks")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.banks) setBanks(data.banks);
+            else setBanksError(true);
+          })
+          .catch(() => setBanksError(true))
+          .finally(() => setBanksLoading(false));
       })
-      .catch(() => setBanksError(true))
-      .finally(() => setBanksLoading(false));
+      .catch(() => setBanksLoading(false));
   }, []);
 
   // Auto-verify the account name once bank + a full 10-digit account
-  // number are selected. Catches typos before submission — same
-  // protection whether the platform is currently in manual or Paystack
-  // payout mode, since a wrong account number is a mistake either way.
+  // number are selected. This calls Paystack's resolve endpoint, so it
+  // only runs in "paystack" payout mode. In "manual" mode there's no
+  // bank_code to resolve with (and no Paystack key to call anyway) — the
+  // seller types their bank name and account name directly instead, and
+  // the admin double-checks it by hand before sending the transfer, same
+  // as they already do for manual escrow payments.
   useEffect(() => {
     setResolved(false);
     setResolveError("");
     setAccountName("");
 
+    if (payoutMethod !== "paystack") return;
     if (!bankCode || accountNumber.length !== 10) return;
 
     let cancelled = false;
@@ -112,13 +131,19 @@ export default function WalletPage() {
     if (!user || !wallet) return;
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error("Enter a valid amount"); return; }
-    if (!bankCode) { toast.error("Select your bank"); return; }
     if (accountNumber.length !== 10) { toast.error("Enter a valid 10-digit account number"); return; }
-    if (!resolved || !accountName.trim()) { toast.error("We couldn't verify this account — check the details."); return; }
+
+    if (payoutMethod === "paystack") {
+      if (!bankCode) { toast.error("Select your bank"); return; }
+      if (!resolved || !accountName.trim()) { toast.error("We couldn't verify this account — check the details."); return; }
+    } else {
+      if (!bankName.trim()) { toast.error("Enter your bank name"); return; }
+      if (!accountName.trim()) { toast.error("Enter the account name"); return; }
+    }
 
     setSubmitting(true);
     try {
-      await requestPayout(user.id, user.name, amt, bankName, accountNumber, accountName, bankCode);
+      await requestPayout(user.id, user.name, amt, bankName, accountNumber, accountName, bankCode || undefined);
       toast.success("Payout requested! Admin will process within 24 hours.");
       setShowPayout(false);
       setAmount("");
@@ -193,26 +218,38 @@ export default function WalletPage() {
 
               <div>
                 <Label>Bank</Label>
-                {banksError ? (
-                  <p className="text-xs text-destructive mt-1">Could not load bank list. Please try again shortly.</p>
+                {payoutMethod === "paystack" ? (
+                  banksError ? (
+                    <p className="text-xs text-destructive mt-1">Could not load bank list. Please try again shortly.</p>
+                  ) : (
+                    <Select
+                      value={bankCode}
+                      onValueChange={(code) => {
+                        setBankCode(code);
+                        setBankName(banks.find((b) => b.code === code)?.name ?? "");
+                      }}
+                      disabled={banksLoading}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder={banksLoading ? "Loading banks…" : "Select your bank"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {banks.map((b) => (
+                          <SelectItem key={b.code} value={b.code}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )
                 ) : (
-                  <Select
-                    value={bankCode}
-                    onValueChange={(code) => {
-                      setBankCode(code);
-                      setBankName(banks.find((b) => b.code === code)?.name ?? "");
-                    }}
-                    disabled={banksLoading}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder={banksLoading ? "Loading banks…" : "Select your bank"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {banks.map((b) => (
-                        <SelectItem key={b.code} value={b.code}>{b.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  // Manual payout mode — admin hasn't enabled Paystack, so
+                  // there's no bank_code to resolve against. Seller types
+                  // their bank name directly; admin verifies by hand.
+                  <Input
+                    placeholder="e.g. Guaranty Trust Bank (GTB)"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    className="mt-1"
+                  />
                 )}
               </div>
 
@@ -230,18 +267,43 @@ export default function WalletPage() {
 
               <div>
                 <Label>Account Name</Label>
-                <div className="relative mt-1">
-                  <Input value={accountName} placeholder="Auto-verified from bank + account number" readOnly disabled />
-                  {resolving && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />}
-                  {resolved && !resolving && <CheckCircle2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-green-600" />}
-                  {resolveError && !resolving && <XCircle className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-destructive" />}
-                </div>
-                {resolveError && <p className="text-xs text-destructive mt-1">{resolveError}</p>}
-                {resolved && <p className="text-xs text-green-600 mt-1">Account verified ✓ — this is who will receive the payout.</p>}
+                {payoutMethod === "paystack" ? (
+                  <>
+                    <div className="relative mt-1">
+                      <Input value={accountName} placeholder="Auto-verified from bank + account number" readOnly disabled />
+                      {resolving && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />}
+                      {resolved && !resolving && <CheckCircle2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-green-600" />}
+                      {resolveError && !resolving && <XCircle className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-destructive" />}
+                    </div>
+                    {resolveError && <p className="text-xs text-destructive mt-1">{resolveError}</p>}
+                    {resolved && <p className="text-xs text-green-600 mt-1">Account verified ✓ — this is who will receive the payout.</p>}
+                  </>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="Name on the account"
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Admin will manually verify this matches your bank details before sending payment.
+                    </p>
+                  </>
+                )}
               </div>
 
               <div className="flex gap-2 pt-1">
-                <Button className="flex-1" onClick={handlePayout} disabled={submitting || !resolved}>
+                <Button
+                  className="flex-1"
+                  onClick={handlePayout}
+                  disabled={
+                    submitting ||
+                    (payoutMethod === "paystack"
+                      ? !resolved
+                      : !bankName.trim() || !accountName.trim() || accountNumber.length !== 10)
+                  }
+                >
                   {submitting ? "Submitting…" : "Submit Payout Request"}
                 </Button>
                 <Button variant="outline" onClick={() => setShowPayout(false)}>Cancel</Button>
