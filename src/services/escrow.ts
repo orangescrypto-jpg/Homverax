@@ -4,11 +4,13 @@
  */
 
 import { d1Query, d1Exec, newId } from "@/lib/d1";
-import type { EscrowTransaction, EscrowStatus } from "@/types";
+import type { EscrowTransaction, EscrowStatus, PaymentRejectionReason } from "@/types";
+import { PAYMENT_REJECTION_REASON_LABELS } from "@/types";
 import { getPlatformConfig, calcBuyerServiceCharge, calcSellerPlatformFee } from "@/services/platformSettings";
 import {
   sendEscrowFundedEmail,
   sendEscrowReleasedEmail,
+  sendPaymentRejectedEmail,
 } from "@/services/emailService";
 import { createNotification } from "@/services/notifications";
 import { creditWalletOnRelease } from "@/services/wallet";
@@ -81,6 +83,10 @@ function rowToEscrow(row: EscrowRow, userId?: string): EscrowTransaction {
     disputeOpenedAt: (meta.disputeOpenedAt as string) ?? undefined,
     resolvedAt: (meta.resolvedAt as string) ?? undefined,
     notes: (meta.notes as string) ?? undefined,
+    rejectionReason: (meta.rejectionReason as EscrowTransaction["rejectionReason"]) ?? undefined,
+    rejectionNote: (meta.rejectionNote as string) ?? undefined,
+    rejectedBy: (meta.rejectedBy as string) ?? undefined,
+    rejectedAt: (meta.rejectedAt as string) ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -240,6 +246,65 @@ export async function submitTransferProof(id: string, reference: string, receipt
     transferSubmittedAt: new Date().toISOString(),
     ...(receiptUrl ? { receiptUrl } : {}),
   });
+}
+
+/**
+ * Admin rejects a buyer's submitted proof of payment.
+ * — Moves status to "payment_rejected" (distinct from "pending") so the
+ *   buyer's order page can show a clear "Payment Rejected — Retry" banner
+ *   instead of silently reverting to the plain bank-transfer screen.
+ * - Records who rejected it, when, and why (preset reason + optional free
+ *   text) directly on the escrow row's meta, so the reason is visible in
+ *   the admin panel later — not just sent once via email and lost.
+ * - Sends the buyer a rejection email explaining why and inviting them to
+ *   resubmit. Fire-and-forget: an email failure never blocks the rejection
+ *   itself, matching the pattern used by adminConfirmFunding above.
+ */
+export async function adminRejectTransfer(
+  id: string,
+  reason: PaymentRejectionReason,
+  note: string | undefined,
+  rejectedByUserId: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await updateEscrowStatusAdmin(id, "payment_rejected", {
+    rejectionReason: reason,
+    rejectionNote: note ?? null,
+    rejectedBy: rejectedByUserId,
+    rejectedAt: now,
+  });
+
+  // ── Email trigger: payment rejected ───────────────────────────────────────
+  try {
+    const escrow = await getEscrowById(id);
+    if (escrow) {
+      const users = await d1Query<{ id: string; email: string; name: string }>(
+        "SELECT id, email, name FROM users WHERE id = ?",
+        [escrow.buyerId]
+      );
+      const buyer = users[0];
+      if (buyer) {
+        void sendPaymentRejectedEmail({
+          buyerEmail: buyer.email,
+          buyerName: buyer.name,
+          listingTitle: escrow.listingTitle,
+          reasonLabel: PAYMENT_REJECTION_REASON_LABELS[reason],
+          note: note ?? undefined,
+          escrowId: escrow.id,
+        });
+      }
+      // ── In-app notification: buyer ───────────────────────────────────────
+      void createNotification({
+        userId: escrow.buyerId,
+        type: "escrow",
+        title: "Payment rejected — please resubmit",
+        body: `Your payment proof for "${escrow.listingTitle}" was rejected. Tap to see why and resubmit.`,
+        actionUrl: `/dashboard/escrow/${escrow.id}`,
+      });
+    }
+  } catch (err) {
+    console.warn("[escrow] adminRejectTransfer email error:", err);
+  }
 }
 
 /**
