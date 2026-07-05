@@ -214,6 +214,10 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   amount      REAL NOT NULL,
   description TEXT,
   reference   TEXT,
+  -- proof_url: set on "Payout completed" rows when admin attached a
+  -- transfer screenshot/receipt (manual payout mode). Lets the seller
+  -- view the same proof admin has, from their own wallet page and email.
+  proof_url   TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
