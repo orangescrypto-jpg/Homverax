@@ -25,6 +25,11 @@ export interface WalletTransaction {
   description: string;
   escrowId?: string;
   reference?: string;
+  // Set on "Payout completed" rows created by approvePayout() when admin
+  // attached a proof of transfer (manual payout mode). Lets the seller
+  // view the same screenshot/receipt admin uploaded, directly from their
+  // own wallet page — not just from the approval email.
+  proofUrl?: string;
   createdAt: string;
 }
 
@@ -156,12 +161,13 @@ async function addWalletTransaction(params: {
   amount: number;
   description: string;
   reference?: string;
+  proofUrl?: string;
 }): Promise<void> {
   const id = newId();
   const now = new Date().toISOString();
   await d1Exec(
-    "INSERT INTO wallet_transactions (id, user_id, type, amount, description, reference, created_at) VALUES (?,?,?,?,?,?,?)",
-    [id, params.userId, params.type, params.amount, params.description, params.reference ?? null, now]
+    "INSERT INTO wallet_transactions (id, user_id, type, amount, description, reference, proof_url, created_at) VALUES (?,?,?,?,?,?,?,?)",
+    [id, params.userId, params.type, params.amount, params.description, params.reference ?? null, params.proofUrl ?? null, now]
   );
 }
 
@@ -301,12 +307,16 @@ export async function approvePayout(
   // matching "completed" entry, so a seller's transaction history showed a
   // payout debit that silently went nowhere — no confirmation it was ever
   // actually paid, no bank reference visible in the ledger itself.
+  // proofUrl is now attached too (manual mode only, when admin uploaded a
+  // transfer screenshot/receipt), so the seller can view the same proof
+  // admin has, directly on their own wallet page.
   await addWalletTransaction({
     userId: payout.userId,
     type: "payout",
     amount: payout.amount,
     description: `Payout completed — ${payout.bankName} ···${payout.accountNumber.slice(-4)} (ref: ${reference})`,
     reference: payoutId,
+    proofUrl,
   });
 
   // ── Email trigger: payout approved ────────────────────────────────────────
@@ -321,6 +331,9 @@ export async function approvePayout(
         amount:        payout.amount,
         bankName:      payout.bankName,
         accountNumber: payout.accountNumber,
+        reference,
+        proofUrl,
+        payoutMethod: payoutMethod ?? "manual",
       });
     }
   } catch (err) {
