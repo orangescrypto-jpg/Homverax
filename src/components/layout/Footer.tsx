@@ -103,13 +103,14 @@ export default function Footer() {
               {[
                 { label: "Browse Listings",       href: "/listings" },
                 { label: "Housing",               href: "/listings?category=housing" },
-                { label: "Commercial",            href: "/listings?category=commercial" },
                 { label: "Land",                  href: "/listings?category=land" },
                 { label: "Short Stays",           href: "/listings?category=shortlets" },
-                { label: "Services",              href: "/listings?category=services" },
-                { label: "Repair & Construction", href: "/listings?category=repair_construction" },
-                { label: "Comm. Equipment",       href: "/listings?category=commercial_equipment" },
                 { label: "Furniture & Home",      href: "/listings?category=furniture_home" },
+                { label: "Building Materials",    href: "/listings?category=building_materials" },
+                { label: "Artisans & Repairs",    href: "/listings?category=artisans_repair" },
+                { label: "Solar & Power",         href: "/listings?category=solar_power" },
+                { label: "Home Services",         href: "/listings?category=home_service" },
+                { label: "Food & Grocery",        href: "/listings?category=food_grocery" },
                 { label: "Post a Listing",        href: "/dashboard/listings/new" },
               ].map((item) => (
                 <li key={item.href}>
