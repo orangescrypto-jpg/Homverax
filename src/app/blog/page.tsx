@@ -5,11 +5,11 @@ import { APP_NAME } from "@/lib/constants";
 import { getPlatformConfig } from "@/services/platformSettings";
 
 export const metadata: Metadata = {
-  title: "Blog — Nigerian Real Estate Insights",
-  description: `Expert tips, market news, and guides for Nigerian property buyers, sellers, and agents. Powered by ${APP_NAME}.`,
+  title: "Blog — Nigerian Marketplace Insights",
+  description: `Expert tips, market news, and guides for Nigerian buyers, sellers, artisans, and agents — covering property, products, and services. Powered by ${APP_NAME}.`,
   openGraph: {
-    title: `${APP_NAME} Blog — Nigerian Real Estate Insights`,
-    description: "Market news, buyer guides, agent tips, and property law in Nigeria.",
+    title: `${APP_NAME} Blog — Nigerian Marketplace Insights`,
+    description: "Market news, buyer guides, agent tips, and marketplace insights across property, products, and services in Nigeria.",
   },
   alternates: { canonical: "https://homverax.com/blog" },
 };
