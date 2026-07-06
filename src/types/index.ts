@@ -1,5 +1,5 @@
 // ─── User ─────────────────────────────────────────────────────────────────────
-export type UserRole = "tenant" | "agent" | "landlord" | "service_provider" | "moderator" | "admin";
+export type UserRole = "tenant" | "agent" | "landlord" | "seller" | "service_provider" | "moderator" | "admin";
 export type VerificationStatus = "none" | "pending" | "approved" | "rejected";
 export type SubscriptionPlanSlug = "free" | "basic" | "pro" | "premium";
 
@@ -33,8 +33,9 @@ export type PropertyType =
 
 export type ServiceType = "cleaning" | "repairs" | "installation" | "logistics" | "other";
 export type ListingCategory =
-  | "housing" | "services" | "commercial" | "land" | "shortlets"
-  | "repair_construction" | "commercial_equipment" | "furniture_home";
+  | "housing" | "land" | "shortlets" | "furniture_home"
+  | "building_materials" | "artisans_repair" | "solar_power"
+  | "home_service" | "food_grocery" | "cleaning_household";
 export type ListingStatus = "draft" | "active" | "paused" | "sold" | "rented";
 export type ListingBoostType = "none" | "featured" | "top_placement" | "urgent";
 export type PriceUnit = "per_month" | "per_year" | "per_day" | "per_service" | "total";
