@@ -21,7 +21,7 @@ import {
 import { searchListings, saveListing, unsaveListing } from "@/services/listings";
 import { saveSearch } from "@/services/savedSearches";
 import { useAuth } from "@/hooks/useAuth";
-import { NIGERIAN_STATES, PROPERTY_TYPES, SERVICE_TYPES, COMMERCIAL_TYPES, LAND_TYPES, SHORTLET_TYPES, REPAIR_CONSTRUCTION_TYPES, COMMERCIAL_EQUIPMENT_TYPES, FURNITURE_HOME_TYPES } from "@/lib/constants";
+import { NIGERIAN_STATES, PROPERTY_TYPES, LAND_TYPES, SHORTLET_TYPES, ARTISANS_REPAIR_TYPES, BUILDING_MATERIALS_TYPES, FURNITURE_HOME_TYPES, SOLAR_POWER_TYPES, HOME_SERVICE_TYPES, FOOD_GROCERY_TYPES, CLEANING_HOUSEHOLD_TYPES } from "@/lib/constants";
 import { toast } from "sonner";
 import type { PropertyListing, ListingFilters } from "@/types";
 import { cn } from "@/lib/utils";
@@ -148,13 +148,15 @@ function ListingsContent({ defaultFilters, heroTitle, heroSubtitle, pageSlug }: 
 
   const activeFilterCount = [category, propertyType, state, listingType, minPrice, maxPrice, bedrooms, verifiedOnly, furnished !== undefined].filter(Boolean).length;
   const propertyTypeOptions =
-    category === "services"             ? SERVICE_TYPES :
-    category === "commercial"           ? COMMERCIAL_TYPES :
-    category === "land"                 ? LAND_TYPES :
-    category === "shortlets"            ? SHORTLET_TYPES :
-    category === "repair_construction"  ? REPAIR_CONSTRUCTION_TYPES :
-    category === "commercial_equipment" ? COMMERCIAL_EQUIPMENT_TYPES :
-    category === "furniture_home"       ? FURNITURE_HOME_TYPES :
+    category === "land"                ? LAND_TYPES :
+    category === "shortlets"           ? SHORTLET_TYPES :
+    category === "artisans_repair"     ? ARTISANS_REPAIR_TYPES :
+    category === "building_materials"  ? BUILDING_MATERIALS_TYPES :
+    category === "furniture_home"      ? FURNITURE_HOME_TYPES :
+    category === "solar_power"         ? SOLAR_POWER_TYPES :
+    category === "home_service"        ? HOME_SERVICE_TYPES :
+    category === "food_grocery"        ? FOOD_GROCERY_TYPES :
+    category === "cleaning_household"  ? CLEANING_HOUSEHOLD_TYPES :
     PROPERTY_TYPES;
 
   return (
@@ -259,13 +261,15 @@ function ListingsContent({ defaultFilters, heroTitle, heroSubtitle, pageSlug }: 
                     <SelectContent>
                       <SelectItem value="">All</SelectItem>
                       <SelectItem value="housing">Housing</SelectItem>
-                      <SelectItem value="commercial">Commercial</SelectItem>
                       <SelectItem value="land">Land</SelectItem>
                       <SelectItem value="shortlets">Short Stays</SelectItem>
-                      <SelectItem value="services">Services</SelectItem>
-                      <SelectItem value="repair_construction">Repair & Construction</SelectItem>
-                      <SelectItem value="commercial_equipment">Commercial Equipment</SelectItem>
                       <SelectItem value="furniture_home">Furniture & Home</SelectItem>
+                      <SelectItem value="building_materials">Building Materials</SelectItem>
+                      <SelectItem value="artisans_repair">Artisans & Repairs</SelectItem>
+                      <SelectItem value="solar_power">Solar & Power</SelectItem>
+                      <SelectItem value="home_service">Home Services</SelectItem>
+                      <SelectItem value="food_grocery">Food & Grocery</SelectItem>
+                      <SelectItem value="cleaning_household">Cleaning & Household</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -276,7 +280,7 @@ function ListingsContent({ defaultFilters, heroTitle, heroSubtitle, pageSlug }: 
                     <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">Any</SelectItem>
-                      {propertyTypeOptions.map((t) => (
+                      {propertyTypeOptions.map((t: { value: string; label: string }) => (
                         <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
                     </SelectContent>
