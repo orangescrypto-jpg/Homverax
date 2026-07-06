@@ -7,14 +7,14 @@ import PageContentRenderer from "@/components/PageContentRenderer";
 export const metadata: Metadata = {
   title: "About Us",
   description:
-    "Learn about HomveraX — our mission to make Nigerian real estate safe, transparent, and accessible through technology and escrow-protected payments.",
+    "Learn about HomveraX — our mission to make buying, selling, and hiring in Nigeria safe, transparent, and accessible through technology and escrow-protected payments.",
 };
 
 const DEFAULT_HTML = `<div class="space-y-8">
   <div class="bg-card border border-border rounded-2xl p-8">
     <h2 class="text-2xl font-serif font-bold text-foreground mb-4">Our Story</h2>
-    <p class="text-muted-foreground leading-relaxed">HomveraX was born out of frustration with the Nigerian property market. Too many people had lost money to fraudulent agents, fake listings, and unscrupulous landlords. We built HomveraX to change that — a marketplace where every agent is identity-verified, every payment is escrow-protected, and every transaction is transparent.</p>
-    <p class="text-muted-foreground leading-relaxed mt-4">We merged the best of two proven platforms — Homvera's elegant property search experience and Tetherng's powerful escrow and agent tools — into one comprehensive marketplace: HomveraX.</p>
+    <p class="text-muted-foreground leading-relaxed">HomveraX was born out of frustration with the Nigerian marketplace. Too many people had lost money to fraudulent agents, fake listings, unscrupulous sellers, and artisans who disappeared after being paid upfront. We built HomveraX to change that — a marketplace where every agent, seller, and service provider is identity-verified, every payment is escrow-protected, and every transaction is transparent.</p>
+    <p class="text-muted-foreground leading-relaxed mt-4">We merged the best of two proven platforms — Homvera's elegant property search experience and Tetherng's powerful escrow and agent tools — into one comprehensive marketplace: HomveraX, covering property, home products, and everyday services.</p>
   </div>
   <div class="bg-card border border-border rounded-2xl p-8">
     <h2 class="text-2xl font-serif font-bold text-foreground mb-4">Contact Us</h2>
@@ -33,8 +33,8 @@ export default function AboutPage() {
           </div>
           <h1 className="text-4xl font-serif font-bold text-foreground mb-4">About HomveraX</h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            We're on a mission to eliminate fraud in Nigerian real estate through technology,
-            verification, and trust.
+            We're on a mission to eliminate fraud in Nigerian property, product, and service
+            transactions through technology, verification, and trust.
           </p>
         </div>
 
