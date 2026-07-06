@@ -1,9 +1,9 @@
 import type { BlogCategory } from "@/types/blog";
 
 export const BLOG_CATEGORIES: { value: BlogCategory; label: string; description: string }[] = [
-  { value: "market-news",      label: "Market News",          description: "Nigerian real estate market trends and updates" },
-  { value: "tips-for-buyers",  label: "Tips for Buyers",      description: "Guides for tenants and property buyers" },
-  { value: "tips-for-sellers", label: "Tips for Sellers",     description: "How to sell or rent out faster" },
+  { value: "market-news",      label: "Market News",          description: "Nigerian marketplace trends across property, products & services" },
+  { value: "tips-for-buyers",  label: "Tips for Buyers",      description: "Guides for tenants, buyers, and shoppers" },
+  { value: "tips-for-sellers", label: "Tips for Sellers",     description: "How to sell, rent out, or list faster" },
   { value: "agent-guide",      label: "Agent Guide",          description: "Resources for real estate agents" },
   { value: "escrow-guide",     label: "Escrow Guide",         description: "How escrow works and payment safety" },
   { value: "nigerian-cities",  label: "Nigerian Cities",      description: "Property guides for Lagos, Abuja, PH, etc." },
