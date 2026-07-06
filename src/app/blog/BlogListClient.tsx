@@ -63,10 +63,10 @@ export default function BlogListClient() {
             <span className="text-sm font-medium">HomveraX Blog</span>
           </div>
           <h1 className="text-4xl font-serif font-bold mb-3">
-            Nigerian Real Estate Insights
+            Nigerian Marketplace Insights
           </h1>
           <p className="text-primary-foreground/80 text-lg max-w-2xl mx-auto">
-            Expert tips, market trends, buyer guides, and property news — everything you need to navigate Nigerian real estate confidently.
+            Expert tips, market trends, buyer guides, and product & service news — everything you need to navigate the Nigerian marketplace confidently.
           </p>
         </div>
       </div>
