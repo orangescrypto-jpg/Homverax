@@ -19,14 +19,14 @@ import {
 } from "@/components/ui/select";
 import { getListingById, updateListing, uploadListingImages } from "@/services/listings";
 import { useAuth } from "@/hooks/useAuth";
-import { NIGERIAN_STATES, PROPERTY_TYPES, SERVICE_TYPES, COMMERCIAL_TYPES, LAND_TYPES, SHORTLET_TYPES, REPAIR_CONSTRUCTION_TYPES, COMMERCIAL_EQUIPMENT_TYPES, FURNITURE_HOME_TYPES, LISTING_CATEGORIES } from "@/lib/constants";
+import { NIGERIAN_STATES, PROPERTY_TYPES, LAND_TYPES, SHORTLET_TYPES, ARTISANS_REPAIR_TYPES, BUILDING_MATERIALS_TYPES, FURNITURE_HOME_TYPES, SOLAR_POWER_TYPES, HOME_SERVICE_TYPES, FOOD_GROCERY_TYPES, CLEANING_HOUSEHOLD_TYPES, LISTING_CATEGORIES } from "@/lib/constants";
 import { toast } from "sonner";
 import type { PropertyListing } from "@/types";
 
 const schema = z.object({
   title: z.string().min(10, "Title must be at least 10 characters"),
   description: z.string().min(50, "Description must be at least 50 characters"),
-  category: z.enum(["housing", "services", "commercial", "land", "shortlets", "repair_construction", "commercial_equipment", "furniture_home"]),
+  category: z.enum(["housing", "land", "shortlets", "furniture_home", "building_materials", "artisans_repair", "solar_power", "home_service", "food_grocery", "cleaning_household"]),
   propertyType: z.string().min(1, "Select a property type"),
   listingType: z.string().min(1, "Select a listing type"),
   price: z.number({ invalid_type_error: "Enter a valid price" }).positive("Enter a valid price"),
@@ -60,13 +60,15 @@ export default function EditListingPage() {
 
   const category = watch("category");
   const propertyTypeOptions =
-    category === "services"             ? SERVICE_TYPES :
-    category === "commercial"           ? COMMERCIAL_TYPES :
-    category === "land"                 ? LAND_TYPES :
-    category === "shortlets"            ? SHORTLET_TYPES :
-    category === "repair_construction"  ? REPAIR_CONSTRUCTION_TYPES :
-    category === "commercial_equipment" ? COMMERCIAL_EQUIPMENT_TYPES :
-    category === "furniture_home"       ? FURNITURE_HOME_TYPES :
+    category === "land"                ? LAND_TYPES :
+    category === "shortlets"           ? SHORTLET_TYPES :
+    category === "artisans_repair"     ? ARTISANS_REPAIR_TYPES :
+    category === "building_materials"  ? BUILDING_MATERIALS_TYPES :
+    category === "furniture_home"      ? FURNITURE_HOME_TYPES :
+    category === "solar_power"         ? SOLAR_POWER_TYPES :
+    category === "home_service"        ? HOME_SERVICE_TYPES :
+    category === "food_grocery"        ? FOOD_GROCERY_TYPES :
+    category === "cleaning_household"  ? CLEANING_HOUSEHOLD_TYPES :
     PROPERTY_TYPES;
   const isHousing = category === "housing";
 
