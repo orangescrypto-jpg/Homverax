@@ -14,9 +14,9 @@ export const ROLE_CONFIG: Record<UserRole, {
   borderColor: string;
 }> = {
   tenant: {
-    label: "Buyer / Tenant",
+    label: "Buyer / Renter",
     shortLabel: "Buyer",
-    description: "Looking to rent, buy a property, or hire a service provider.",
+    description: "Looking to rent, buy a property, or purchase items and services.",
     iconName: "User",
     color: "text-blue-600",
     bgColor: "bg-blue-50",
@@ -40,10 +40,19 @@ export const ROLE_CONFIG: Record<UserRole, {
     bgColor: "bg-green-50",
     borderColor: "border-green-200",
   },
+  seller: {
+    label: "Seller",
+    shortLabel: "Seller",
+    description: "Sell products like furniture, building materials, solar equipment, groceries, and household items.",
+    iconName: "Store",
+    color: "text-teal-600",
+    bgColor: "bg-teal-50",
+    borderColor: "border-teal-200",
+  },
   service_provider: {
-    label: "Service Provider",
-    shortLabel: "Provider",
-    description: "Offer services like cleaning, repairs, installation, logistics and more.",
+    label: "Artisan / Service Provider",
+    shortLabel: "Artisan",
+    description: "Offer hands-on services — repairs, installation, cleaning, home services, and more.",
     iconName: "Wrench",
     color: "text-orange-600",
     bgColor: "bg-orange-50",
@@ -69,11 +78,11 @@ export const ROLE_CONFIG: Record<UserRole, {
   },
 };
 
-/** Roles users can self-select (admin & moderator assigned by admin only) */
+/** Roles users can self-select (admin & moderator assigned by admin only). Landlord kept for existing users but no longer offered at signup. */
 export const SELECTABLE_ROLES: UserRole[] = [
   "tenant",
   "agent",
-  "landlord",
+  "seller",
   "service_provider",
 ];
 
@@ -81,6 +90,7 @@ export const SELECTABLE_ROLES: UserRole[] = [
 export const LISTER_ROLES: UserRole[] = [
   "agent",
   "landlord",
+  "seller",
   "service_provider",
 ];
 
