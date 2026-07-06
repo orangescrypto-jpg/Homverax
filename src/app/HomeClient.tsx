@@ -542,7 +542,7 @@ export default function HomeClient() {
                   From the Blog
                 </p>
                 <h2 className="font-serif text-3xl font-bold text-foreground">
-                  Nigerian Real Estate Insights
+                  Nigerian Marketplace Insights
                 </h2>
                 <p className="text-muted-foreground mt-2">
                   Tips, market trends, and guides to help you transact confidently.
