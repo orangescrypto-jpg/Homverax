@@ -38,20 +38,22 @@ import type { PropertyListing } from "@/types";
 // ─── Static data ──────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { label: "Housing",              icon: HomeIcon,    query: "/listings?category=housing",              color: "text-blue-500",   bg: "bg-blue-50 dark:bg-blue-950/40" },
-  { label: "Commercial",           icon: Building2,   query: "/listings?category=commercial",           color: "text-violet-500", bg: "bg-violet-50 dark:bg-violet-950/40" },
-  { label: "Land",                 icon: MapPin,      query: "/listings?category=land",                 color: "text-green-600",  bg: "bg-green-50 dark:bg-green-950/40" },
-  { label: "Short Stays",          icon: Star,        query: "/listings?category=shortlets",            color: "text-amber-500",  bg: "bg-amber-50 dark:bg-amber-950/40" },
-  { label: "Services",             icon: Zap,         query: "/listings?category=services",             color: "text-cyan-500",   bg: "bg-cyan-50 dark:bg-cyan-950/40" },
-  { label: "Repair & Construction",icon: Wrench,      query: "/listings?category=repair_construction",  color: "text-orange-500", bg: "bg-orange-50 dark:bg-orange-950/40" },
-  { label: "Comm. Equipment",      icon: ShieldCheck, query: "/listings?category=commercial_equipment", color: "text-red-500",    bg: "bg-red-50 dark:bg-red-950/40" },
-  { label: "Furniture & Home",     icon: Sofa,        query: "/listings?category=furniture_home",       color: "text-pink-500",   bg: "bg-pink-50 dark:bg-pink-950/40" },
+  { label: "Housing",             icon: HomeIcon,    query: "/listings?category=housing",             color: "text-blue-500",   bg: "bg-blue-50 dark:bg-blue-950/40" },
+  { label: "Land",                icon: MapPin,      query: "/listings?category=land",                color: "text-green-600",  bg: "bg-green-50 dark:bg-green-950/40" },
+  { label: "Short Stays",         icon: Star,        query: "/listings?category=shortlets",           color: "text-amber-500",  bg: "bg-amber-50 dark:bg-amber-950/40" },
+  { label: "Furniture & Home",    icon: Sofa,        query: "/listings?category=furniture_home",      color: "text-pink-500",   bg: "bg-pink-50 dark:bg-pink-950/40" },
+  { label: "Building Materials",  icon: ShieldCheck, query: "/listings?category=building_materials",  color: "text-red-500",    bg: "bg-red-50 dark:bg-red-950/40" },
+  { label: "Artisans & Repairs",  icon: Wrench,      query: "/listings?category=artisans_repair",     color: "text-orange-500", bg: "bg-orange-50 dark:bg-orange-950/40" },
+  { label: "Solar & Power",       icon: Zap,         query: "/listings?category=solar_power",         color: "text-cyan-500",   bg: "bg-cyan-50 dark:bg-cyan-950/40" },
+  { label: "Home Services",       icon: Zap,         query: "/listings?category=home_service",        color: "text-teal-500",   bg: "bg-teal-50 dark:bg-teal-950/40" },
+  { label: "Food & Grocery",      icon: Sofa,        query: "/listings?category=food_grocery",        color: "text-lime-600",   bg: "bg-lime-50 dark:bg-lime-950/40" },
+  { label: "Cleaning & Household",icon: Sofa,        query: "/listings?category=cleaning_household",  color: "text-indigo-500", bg: "bg-indigo-50 dark:bg-indigo-950/40" },
 ];
 
 const HOW_IT_WORKS = [
   { step: "01", title: "Browse & Discover",    description: "Search thousands of verified listings across Nigeria. Filter by location, price, type, and more." },
   { step: "02", title: "Connect Safely",        description: "Chat directly with BVN-verified agents. Ask questions, schedule viewings, and negotiate terms." },
-  { step: "03", title: "Pay with Escrow",       description: "Your payment is held securely until you confirm everything is right. Inspect the property first." },
+  { step: "03", title: "Pay with Escrow",       description: "Your payment is held securely until you confirm everything is right. Inspect the property, product, or service first." },
   { step: "04", title: "Move In Confidently",   description: "Release funds when satisfied. Full transaction history and receipts provided." },
 ];
 
@@ -123,7 +125,7 @@ export default function HomeClient() {
     // Fetch featured + per-category listings (4 per category)
     async function loadListings() {
       try {
-        const CATS = ["housing","commercial","land","shortlets","services","repair_construction","commercial_equipment","furniture_home"];
+        const CATS = ["housing","land","shortlets","furniture_home","building_materials","artisans_repair","solar_power","home_service","food_grocery","cleaning_household"];
         // ✅ FIX: this fires 9 concurrent requests (1 featured + 8 per
         // category). Promise.all() rejects the WHOLE batch if even one of
         // those 9 fails or times out — wiping out every category's
@@ -202,14 +204,16 @@ export default function HomeClient() {
   const totalListings = Object.values(categoryListings).reduce((s, arr) => s + arr.length, 0) + featuredListings.length;
 
   const CATEGORY_META: { key: string; label: string; color: string; bg: string }[] = [
-    { key: "housing",              label: "Housing",               color: "text-blue-500",    bg: "bg-blue-50 dark:bg-blue-950/40" },
-    { key: "commercial",           label: "Commercial",            color: "text-violet-500",  bg: "bg-violet-50 dark:bg-violet-950/40" },
-    { key: "land",                 label: "Land",                  color: "text-green-600",   bg: "bg-green-50 dark:bg-green-950/40" },
-    { key: "shortlets",            label: "Short Stays",           color: "text-amber-500",   bg: "bg-amber-50 dark:bg-amber-950/40" },
-    { key: "services",             label: "Services",              color: "text-cyan-500",    bg: "bg-cyan-50 dark:bg-cyan-950/40" },
-    { key: "repair_construction",  label: "Repair & Construction", color: "text-orange-500",  bg: "bg-orange-50 dark:bg-orange-950/40" },
-    { key: "commercial_equipment", label: "Commercial Equipment",  color: "text-red-500",     bg: "bg-red-50 dark:bg-red-950/40" },
-    { key: "furniture_home",       label: "Furniture & Home",      color: "text-pink-500",    bg: "bg-pink-50 dark:bg-pink-950/40" },
+    { key: "housing",             label: "Housing",              color: "text-blue-500",    bg: "bg-blue-50 dark:bg-blue-950/40" },
+    { key: "land",                label: "Land",                 color: "text-green-600",   bg: "bg-green-50 dark:bg-green-950/40" },
+    { key: "shortlets",           label: "Short Stays",          color: "text-amber-500",   bg: "bg-amber-50 dark:bg-amber-950/40" },
+    { key: "furniture_home",      label: "Furniture & Home",     color: "text-pink-500",    bg: "bg-pink-50 dark:bg-pink-950/40" },
+    { key: "building_materials",  label: "Building Materials",   color: "text-red-500",     bg: "bg-red-50 dark:bg-red-950/40" },
+    { key: "artisans_repair",     label: "Artisans & Repairs",   color: "text-orange-500",  bg: "bg-orange-50 dark:bg-orange-950/40" },
+    { key: "solar_power",         label: "Solar & Power",        color: "text-cyan-500",    bg: "bg-cyan-50 dark:bg-cyan-950/40" },
+    { key: "home_service",        label: "Home Services",        color: "text-teal-500",    bg: "bg-teal-50 dark:bg-teal-950/40" },
+    { key: "food_grocery",        label: "Food & Grocery",       color: "text-lime-600",    bg: "bg-lime-50 dark:bg-lime-950/40" },
+    { key: "cleaning_household",  label: "Cleaning & Household", color: "text-indigo-500",  bg: "bg-indigo-50 dark:bg-indigo-950/40" },
   ];
 
   return (
@@ -237,12 +241,12 @@ export default function HomeClient() {
 
             <h1 className="font-serif text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
               Find Your Perfect{" "}
-              <span className="text-primary">Property</span>{" "}
+              <span className="text-primary">Property, Product or Service</span>{" "}
               in Nigeria
             </h1>
             <p className="mt-6 text-lg leading-relaxed text-muted-foreground sm:text-xl">
-              HomveraX connects you to verified agents, holds your payments securely in escrow, and
-              ensures every deal is transparent. No scams, no guesswork.
+              HomveraX connects you to verified agents, sellers and artisans, holds your payments
+              securely in escrow, and ensures every deal is transparent. No scams, no guesswork.
             </p>
 
             {/* Search bar */}
@@ -251,7 +255,7 @@ export default function HomeClient() {
                 <Search className="w-5 h-5 text-muted-foreground shrink-0" />
                 <input
                   type="text"
-                  placeholder="Search properties, locations…"
+                  placeholder="Search properties, products, services…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -265,13 +269,15 @@ export default function HomeClient() {
               >
                 <option value="all">All Categories</option>
                 <option value="housing">Housing</option>
-                <option value="commercial">Commercial</option>
                 <option value="land">Land</option>
                 <option value="shortlets">Short Stays</option>
-                <option value="services">Services</option>
-                <option value="repair_construction">Repair & Construction</option>
-                <option value="commercial_equipment">Commercial Equipment</option>
                 <option value="furniture_home">Furniture & Home</option>
+                <option value="building_materials">Building Materials</option>
+                <option value="artisans_repair">Artisans & Repairs</option>
+                <option value="solar_power">Solar & Power</option>
+                <option value="home_service">Home Services</option>
+                <option value="food_grocery">Food & Grocery</option>
+                <option value="cleaning_household">Cleaning & Household</option>
               </select>
               <Button onClick={handleSearch} size="lg" className="rounded-xl font-semibold">
                 Search
