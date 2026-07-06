@@ -79,7 +79,7 @@ export default function Footer() {
               </span>
             </div>
             <p className="text-sm text-background/70 leading-relaxed mb-6">
-              Nigeria's most trusted real estate and services marketplace. Find your perfect home,
+              Nigeria's most trusted marketplace for property, products, and services. Find your perfect home,
               hire verified professionals, and transact securely with escrow.
             </p>
 
