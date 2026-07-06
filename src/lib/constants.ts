@@ -245,4 +245,4 @@ export const PLATFORM_FEE_PERCENT = 1.5; // 1.5% escrow fee
 export const APP_NAME = "HomveraX";
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://homverax.com";
 export const APP_DESCRIPTION =
-  "Nigeria's most trusted real estate and services marketplace. Find your perfect home, hire verified professionals, and transact securely with escrow protection.";
+  "Nigeria's most trusted marketplace for property, products, and services. Find your perfect home, hire verified professionals, and transact securely with escrow protection.";
