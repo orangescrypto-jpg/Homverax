@@ -14,9 +14,9 @@ export const ROLE_CONFIG: Record<UserRole, {
   borderColor: string;
 }> = {
   tenant: {
-    label: "Buyer / Renter",
+    label: "Buyer / Tenant",
     shortLabel: "Buyer",
-    description: "Looking to rent, buy a property, or purchase items and services.",
+    description: "Looking to rent, buy a property, or hire a service provider.",
     iconName: "User",
     color: "text-blue-600",
     bgColor: "bg-blue-50",
