@@ -121,23 +121,6 @@ export const PROPERTY_TYPES = [
   { value: "shortlet", label: "Shortlet" },
 ] as const;
 
-export const SERVICE_TYPES = [
-  { value: "cleaning", label: "Cleaning" },
-  { value: "repairs", label: "Repairs" },
-  { value: "installation", label: "Installation" },
-  { value: "logistics", label: "Logistics" },
-  { value: "other", label: "Other Services" },
-] as const;
-
-export const COMMERCIAL_TYPES = [
-  { value: "office", label: "Office Space" },
-  { value: "shop", label: "Shop / Retail" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "event_hall", label: "Event Hall" },
-  { value: "coworking", label: "Co-working Space" },
-  { value: "plaza", label: "Plaza / Complex" },
-] as const;
-
 export const LAND_TYPES = [
   { value: "residential_land", label: "Residential Land" },
   { value: "commercial_land", label: "Commercial Land" },
@@ -152,24 +135,26 @@ export const SHORTLET_TYPES = [
   { value: "shortlet_villa", label: "Villa / Luxury" },
 ] as const;
 
-export const REPAIR_CONSTRUCTION_TYPES = [
+export const ARTISANS_REPAIR_TYPES = [
   { value: "plumbing", label: "Plumbing" },
   { value: "electrical", label: "Electrical" },
-  { value: "building_construction", label: "Building & Construction" },
+  { value: "ac_appliance_repair", label: "AC & Appliance Repair" },
   { value: "painting", label: "Painting & Finishing" },
-  { value: "roofing", label: "Roofing" },
   { value: "tiling", label: "Tiling & Flooring" },
   { value: "welding_fabrication", label: "Welding & Fabrication" },
   { value: "other_repair", label: "Other Repairs" },
 ] as const;
 
-export const COMMERCIAL_EQUIPMENT_TYPES = [
+export const BUILDING_MATERIALS_TYPES = [
+  { value: "cement_blocks", label: "Cement & Blocks" },
+  { value: "tiles_flooring", label: "Tiles & Flooring" },
+  { value: "roofing", label: "Roofing Sheets" },
+  { value: "doors_windows", label: "Doors & Windows" },
   { value: "generator", label: "Generator" },
   { value: "air_conditioning", label: "Air Conditioning" },
   { value: "borehole_pump", label: "Borehole / Water Pump" },
-  { value: "solar_system", label: "Solar System" },
   { value: "heavy_machinery", label: "Heavy Machinery" },
-  { value: "other_equipment", label: "Other Equipment" },
+  { value: "other_equipment", label: "Other Materials & Equipment" },
 ] as const;
 
 export const FURNITURE_HOME_TYPES = [
@@ -181,15 +166,47 @@ export const FURNITURE_HOME_TYPES = [
   { value: "other_home", label: "Other Home Items" },
 ] as const;
 
+export const SOLAR_POWER_TYPES = [
+  { value: "solar_panel", label: "Solar Panels" },
+  { value: "inverter", label: "Inverters" },
+  { value: "battery", label: "Batteries" },
+  { value: "installation_service", label: "Installation Service" },
+  { value: "other_power", label: "Other Power Equipment" },
+] as const;
+
+export const HOME_SERVICE_TYPES = [
+  { value: "cleaning", label: "Cleaning" },
+  { value: "fumigation", label: "Fumigation" },
+  { value: "movers", label: "Movers / Relocation" },
+  { value: "interior_design", label: "Interior Design" },
+  { value: "other_home_service", label: "Other Home Services" },
+] as const;
+
+export const FOOD_GROCERY_TYPES = [
+  { value: "foodstuff", label: "Foodstuff" },
+  { value: "provisions", label: "Provisions" },
+  { value: "bulk_groceries", label: "Bulk Groceries" },
+  { value: "other_food", label: "Other Food Items" },
+] as const;
+
+export const CLEANING_HOUSEHOLD_TYPES = [
+  { value: "cleaning_supplies", label: "Cleaning Supplies" },
+  { value: "household_essentials", label: "Household Essentials" },
+  { value: "other_household", label: "Other Household Items" },
+] as const;
+
+
 export const LISTING_CATEGORIES = [
-  { value: "housing",              label: "Housing",               description: "Apartments, houses, duplexes, flats" },
-  { value: "commercial",           label: "Commercial",            description: "Office spaces, shops, warehouses, event halls" },
-  { value: "land",                 label: "Land",                  description: "Residential, commercial & agricultural land" },
-  { value: "shortlets",            label: "Short Stays",           description: "Short-term rentals by the day or week" },
-  { value: "services",             label: "Services",              description: "Cleaning, logistics, installation & more" },
-  { value: "repair_construction",  label: "Repair & Construction", description: "Plumbers, electricians, builders & contractors" },
-  { value: "commercial_equipment", label: "Commercial Equipment",  description: "Generators, AC units, solar & machinery" },
-  { value: "furniture_home",       label: "Furniture & Home",      description: "Furniture, décor & home appliances" },
+  { value: "housing",             label: "Housing",              description: "Apartments, houses, duplexes, flats" },
+  { value: "land",                label: "Land",                 description: "Residential, commercial & agricultural land" },
+  { value: "shortlets",           label: "Short Stays",          description: "Short-term rentals by the day or week" },
+  { value: "furniture_home",      label: "Furniture & Home",     description: "Furniture, décor & home appliances" },
+  { value: "building_materials",  label: "Building Materials",   description: "Cement, tiles, roofing, generators, solar & machinery" },
+  { value: "artisans_repair",     label: "Artisans & Repairs",   description: "Plumbers, electricians, AC & appliance repair" },
+  { value: "solar_power",         label: "Solar & Power",        description: "Inverters, panels, batteries & installation" },
+  { value: "home_service",        label: "Home Services",        description: "Cleaning, fumigation, movers & interior design" },
+  { value: "food_grocery",        label: "Food & Grocery",       description: "Foodstuff, provisions & bulk groceries" },
+  { value: "cleaning_household",  label: "Cleaning & Household", description: "Cleaning supplies & household essentials" },
 ] as const;
 
 export const ESCROW_STEPS = [
