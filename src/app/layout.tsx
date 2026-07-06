@@ -47,8 +47,9 @@ export const metadata: Metadata = {
   keywords: [
     "Nigeria real estate", "property listings Nigeria", "houses for rent Lagos",
     "apartments Abuja", "buy land Nigeria", "verified agents Nigeria",
-    "escrow Nigeria", "HomveraX", "property marketplace Nigeria",
-    "shortlet Lagos", "real estate services Nigeria",
+    "escrow Nigeria", "HomveraX", "marketplace Nigeria",
+    "shortlet Lagos", "building materials Nigeria", "artisans Nigeria",
+    "solar equipment Nigeria", "home services Nigeria", "escrow marketplace Nigeria",
   ],
   authors: [{ name: "HomveraX", url: APP_URL }],
   creator: "HomveraX",
